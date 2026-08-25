@@ -1,0 +1,236 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-ring-offset-background: var(--background);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-brand-blue: var(--brand-blue);
+  --color-brand-cyan: var(--brand-cyan);
+  --color-brand-green: var(--brand-green);
+  --font-sans: "Plus Jakarta Sans", "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+:root, .light {
+  /* BL Core — LIGHT theme */
+  --radius: 0.85rem;
+  --background: oklch(0.985 0.005 250);
+  --foreground: oklch(0.22 0.03 258);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.22 0.03 258);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.22 0.03 258);
+  --primary: oklch(0.65 0.18 145);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.95 0.01 250);
+  --secondary-foreground: oklch(0.22 0.03 258);
+  --muted: oklch(0.95 0.01 250);
+  --muted-foreground: oklch(0.45 0.02 258);
+  --accent: oklch(0.55 0.19 258);
+  --accent-foreground: oklch(0.99 0 0);
+  --destructive: oklch(0.6 0.22 22);
+  --destructive-foreground: oklch(0.99 0 0);
+  --border: oklch(0.9 0.01 250);
+  --input: oklch(0.94 0.01 250);
+  --ring: oklch(0.65 0.18 145);
+
+  --brand-blue: oklch(0.55 0.19 258);
+  --brand-cyan: oklch(0.7 0.14 220);
+  --brand-green: oklch(0.65 0.18 145);
+
+  --chart-1: oklch(0.65 0.18 145);
+  --chart-2: oklch(0.55 0.19 258);
+  --chart-3: oklch(0.7 0.14 220);
+  --chart-4: oklch(0.75 0.15 85);
+  --chart-5: oklch(0.6 0.2 20);
+
+  --sidebar: oklch(0.98 0.005 250);
+  --sidebar-foreground: oklch(0.22 0.03 258);
+  --sidebar-primary: oklch(0.65 0.18 145);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.95 0.01 250);
+  --sidebar-accent-foreground: oklch(0.22 0.03 258);
+  --sidebar-border: oklch(0.9 0.01 250);
+  --sidebar-ring: oklch(0.65 0.18 145);
+
+  --gradient-brand: linear-gradient(135deg, oklch(0.72 0.16 163), oklch(0.85 0.15 160));
+  --gradient-hero: linear-gradient(145deg, oklch(0.32 0.055 175) 0%, oklch(0.45 0.1 168) 45%, oklch(0.72 0.15 163) 100%);
+  --shadow-soft: 0 10px 30px -14px oklch(0.2 0.03 258 / 0.18);
+  --shadow-glow: 0 0 36px -12px oklch(0.7 0.15 163 / 0.4);
+}
+
+.dark {
+  /* BL Core — DARK premium palette */
+  --background: oklch(0.21 0.035 265);
+  --foreground: oklch(1 0 0);
+  --card: oklch(0.25 0.032 265);
+  --card-foreground: oklch(1 0 0);
+  --popover: oklch(0.25 0.032 265);
+  --popover-foreground: oklch(1 0 0);
+  --primary: oklch(0.78 0.14 163);
+  --primary-foreground: oklch(0.19 0.04 170);
+  --secondary: oklch(0.3 0.03 265);
+  --secondary-foreground: oklch(1 0 0);
+  --muted: oklch(0.3 0.03 265);
+  --muted-foreground: oklch(0.75 0.025 257);
+  --accent: oklch(0.7 0.15 163);
+  --accent-foreground: oklch(1 0 0);
+  --destructive: oklch(0.62 0.22 22);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.34 0.03 265);
+  --input: oklch(0.29 0.03 265);
+  --ring: oklch(0.78 0.14 163);
+
+  --brand-blue: oklch(0.36 0.06 175);
+  --brand-cyan: oklch(0.82 0.13 163);
+  --brand-green: oklch(0.78 0.14 163);
+
+  --sidebar: oklch(0.23 0.033 265);
+  --sidebar-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.3 0.03 265);
+  --sidebar-accent-foreground: oklch(1 0 0);
+  --sidebar-border: oklch(0.34 0.03 265);
+
+  --gradient-brand: linear-gradient(135deg, oklch(0.78 0.15 163), oklch(0.9 0.14 158));
+  --gradient-hero: linear-gradient(145deg, oklch(0.32 0.055 175) 0%, oklch(0.45 0.1 168) 45%, oklch(0.74 0.15 163) 100%);
+
+  --shadow-soft: 0 10px 30px -12px oklch(0 0 0 / 0.5);
+}
+
+@layer base {
+  * { border-color: var(--color-border); }
+  html { color-scheme: dark; }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@utility bl-glass {
+  background: color-mix(in oklab, var(--card) 78%, transparent);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border);
+}
+
+@utility bl-gradient-text {
+  background: var(--gradient-brand);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ---------- Ajustes globais de responsividade e formulários ---------- */
+@layer base {
+  html,
+  body {
+    overflow-x: hidden;
+  }
+
+  /* Evita zoom automático no iOS e padroniza a altura dos campos nativos */
+  input,
+  select,
+  textarea,
+  button {
+    font-size: 16px;
+  }
+
+  @media (min-width: 640px) {
+    input,
+    select,
+    textarea,
+    button {
+      font-size: inherit;
+    }
+  }
+
+  /* Campos de data/hora com a mesma aparência dos demais inputs */
+  input[type="date"],
+  input[type="time"],
+  input[type="datetime-local"] {
+    min-height: 2.5rem;
+    appearance: none;
+    -webkit-appearance: none;
+    text-align: left;
+  }
+
+  input[type="date"]::-webkit-date-and-time-value,
+  input[type="time"]::-webkit-date-and-time-value {
+    text-align: left;
+  }
+
+  /* Sem ícone de calendário/relógio nativo (aparecia apagado no layout) */
+  input[type="date"]::-webkit-calendar-picker-indicator,
+  input[type="time"]::-webkit-calendar-picker-indicator,
+  input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+    display: none;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  input[type="date"]::-webkit-inner-spin-button,
+  input[type="time"]::-webkit-inner-spin-button {
+    display: none;
+  }
+
+
+  /* Rótulo seguido diretamente por um controle nunca fica colado */
+  label + input,
+  label + select,
+  label + textarea,
+  label + button,
+  label + [data-slot="select-trigger"] {
+    margin-top: 0.375rem;
+  }
+}
+
+/* O mapa (Leaflet) nunca deve cobrir modais, popovers e menus */
+.leaflet-container,
+.leaflet-pane,
+.leaflet-top,
+.leaflet-bottom,
+.leaflet-control {
+  z-index: 0 !important;
+}
