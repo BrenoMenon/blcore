@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="pt-BR" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>BL Core Gestão</title>
+    <meta name="description" content="Sistema de gestão empresarial com agendamentos, clientes, serviços e orçamentos inteligentes com IA e geração de PDF." />
+    <meta property="og:title" content="BL Core Gestão" />
+    <meta property="og:description" content="Sistema de gestão empresarial com agendamentos, clientes, serviços e orçamentos inteligentes com IA e geração de PDF." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="BL Core Gestão" />
+    <meta name="twitter:description" content="Sistema de gestão empresarial com agendamentos, clientes, serviços e orçamentos inteligentes com IA e geração de PDF." />
+    
+    <!-- PWA & Mobile Web App Meta -->
+    <meta name="theme-color" content="#10b981" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="BLCore" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    
+    <!-- Adaptive Icons -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+
+    <!-- Typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    
+    <script>
+      try {
+        var t = localStorage.getItem('bl-theme');
+        if (t !== 'light') t = 'dark';
+        document.documentElement.classList.remove('light', 'dark');
+        document.documentElement.classList.add(t);
+        document.documentElement.style.colorScheme = t;
+      } catch (e) {
+        document.documentElement.classList.add('dark');
+        document.documentElement.style.colorScheme = 'dark';
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

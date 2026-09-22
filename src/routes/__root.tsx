@@ -83,17 +83,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "BL Core Gestão — Sistema de Agendamento Premium" },
-      { name: "description", content: "Gerencie clientes, serviços e agendamentos com uma agenda profissional, responsiva e integrada." },
+      { title: "BL Core Gestão" },
+      { name: "description", content: "Gerencie clientes, serviços, agendamentos e orçamentos com a plataforma completa BL Core Gestão." },
       { name: "author", content: "BL Core" },
-      { property: "og:title", content: "BL Core Gestão — Sistema de Agendamento Premium" },
-      { property: "og:description", content: "Gerencie clientes, serviços e agendamentos com uma agenda profissional, responsiva e integrada." },
+      { property: "og:title", content: "BL Core Gestão" },
+      { property: "og:description", content: "Gerencie clientes, serviços, agendamentos e orçamentos com a plataforma completa BL Core Gestão." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:title", content: "BL Core Gestão — Sistema de Agendamento Premium" },
-      { name: "twitter:description", content: "Gerencie clientes, serviços e agendamentos com uma agenda profissional, responsiva e integrada." },
-      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/24df5b95-a1e2-49a7-bab5-9a5a9a0d220b/id-preview-fdc64c39--61cf048a-57b5-43ba-aba4-4ce690489101.lovable.app-1783202381223.png" },
-      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/24df5b95-a1e2-49a7-bab5-9a5a9a0d220b/id-preview-fdc64c39--61cf048a-57b5-43ba-aba4-4ce690489101.lovable.app-1783202381223.png" },
+      { name: "twitter:title", content: "BL Core Gestão" },
+      { name: "twitter:description", content: "Gerencie clientes, serviços, agendamentos e orçamentos com a plataforma completa BL Core Gestão." },
     ],
     links: [
       {
@@ -101,7 +99,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         href: appCss,
       },
       { rel: "icon", href: "/favicon.png", type: "image/png" },
-      { rel: "apple-touch-icon", href: "/favicon.png" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
+      { rel: "manifest", href: "/manifest.webmanifest" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "" },
       { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" },
@@ -114,18 +113,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 });
 
 function RootShell({ children }: { children: ReactNode }) {
-  return (
-    <html lang="pt-BR" className="dark" suppressHydrationWarning>
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
-        <HeadContent />
-      </head>
-      <body suppressHydrationWarning>
-        {children}
-        <Scripts />
-      </body>
-    </html>
-  );
+  return <>{children}</>;
 }
 
 function RootComponent() {

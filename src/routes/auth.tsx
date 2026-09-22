@@ -71,7 +71,7 @@ function AuthPage() {
             <div className="mb-8 flex flex-col items-center gap-3 lg:hidden">
               <Logo size="lg" />
               <p className="text-center text-sm text-muted-foreground">
-                {t("Sistema premium de agendamento")}
+                BL Core Gestão
               </p>
             </div>
 

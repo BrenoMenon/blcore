@@ -1,0 +1,6 @@
+{
+  "name": "BL Core Gestão",
+  "description": "Sistema de gestão empresarial com agendamentos, clientes, serviços e orçamentos inteligentes com IA e geração de PDF.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
