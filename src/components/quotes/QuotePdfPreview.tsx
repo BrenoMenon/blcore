@@ -537,7 +537,8 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
                   </h3>
                   <div className="space-y-1 text-xs text-slate-700">
                     <p>
-                      <span className="font-semibold text-slate-900">Nome:</span> {quote.client.name}
+                      <span className="font-semibold text-slate-900">Nome:</span>{" "}
+                      {quote.client.name || "A Definir"}
                     </p>
                     {quote.client.phone && (
                       <p>
@@ -665,28 +666,34 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
               </div>
 
               {/* Terms, Conditions and Notes */}
-              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 mb-6 space-y-2 text-xs">
-                <h4 className="font-bold text-slate-800 uppercase text-[11px] tracking-wider">
-                  Condições de Pagamento & Prazos
-                </h4>
-                <div className="grid grid-cols-2 gap-4 text-slate-700">
-                  <div>
-                    <span className="font-semibold text-slate-900">Forma de Pagamento:</span>{" "}
-                    {quote.paymentTerms}
+              {(quote.paymentTerms || quote.validityDays || quote.notes) && (
+                <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 mb-6 space-y-2 text-xs">
+                  <h4 className="font-bold text-slate-800 uppercase text-[11px] tracking-wider">
+                    Condições & Prazos
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-slate-700">
+                    {quote.paymentTerms && (
+                      <div>
+                        <span className="font-semibold text-slate-900">Forma de Pagamento:</span>{" "}
+                        {quote.paymentTerms}
+                      </div>
+                    )}
+                    {Boolean(quote.validityDays) && (
+                      <div>
+                        <span className="font-semibold text-slate-900">Validade da Proposta:</span>{" "}
+                        {quote.validityDays} dias (até {validityDate})
+                      </div>
+                    )}
                   </div>
-                  <div>
-                    <span className="font-semibold text-slate-900">Validade da Proposta:</span>{" "}
-                    {quote.validityDays} dias (até {validityDate})
-                  </div>
-                </div>
 
-                {quote.notes && (
-                  <div className="pt-2 border-t border-slate-200 text-slate-600 leading-relaxed text-[11px]">
-                    <span className="font-semibold text-slate-900">Observações & Garantia:</span>{" "}
-                    {quote.notes}
-                  </div>
-                )}
-              </div>
+                  {quote.notes && (
+                    <div className="pt-2 border-t border-slate-200 text-slate-600 leading-relaxed text-[11px]">
+                      <span className="font-semibold text-slate-900">Observações:</span>{" "}
+                      {quote.notes}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Document Footer with Signatures */}

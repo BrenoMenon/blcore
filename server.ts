@@ -68,29 +68,36 @@ async function startServer() {
             },
           });
 
-          const systemInstruction = `Você é o especialista de elite em geração de orçamentos e propostas comerciais do sistema BL Core Gestão.
-Transforme a solicitação do usuário em uma proposta comercial completa, estruturada e detalhada em formato JSON estrito.
-REGRAS MANDATÓRIAS DE EXTRAÇÃO:
+          const systemInstruction = `Você é o motor de inteligência artificial de extração do BL Core Gestão.
+REGRA DE OURO ABSOLUTA:
+NÃO INVENTE, NÃO ADIVINHE E NÃO PREENCHA CAMPOS QUE O USUÁRIO NÃO MENCIONOU.
+Se o usuário não falou o CPF, deixe document vazio ("").
+Se não falou o telefone, deixe phone vazio ("").
+Se não falou endereço, deixe address vazio ("").
+Se não falou o nome do cliente, deixe name vazio ("").
+Se não falou prazo de validade da proposta, deixe validityDays nulo (null).
+Se não falou condições de pagamento, deixe paymentTerms vazio ("").
+Se não falou observações, deixe notes vazio ("").
+Se não falou detalhes/descrição do item, deixe description vazio ("").
+
+REGRAS DE EXTRAÇÃO:
 1. client:
-   - name: Nome completo do cliente (apenas nome de pessoa ou razão social da empresa, NUNCA palavras como 'gestão', 'orçamento', 'serviço')
-   - phone: Telefone ou WhatsApp formatado como (XX) XXXXX-XXXX ou (XX) XXXX-XXXX
-   - document: CPF (formato XXX.XXX.XXX-XX) ou CNPJ (XX.XXX.XXX/XXXX-XX)
-   - address: Endereço completo, cidade e bairro identificados no texto
-   - email: E-mail se informado
+   - name: Apenas o nome real e sobrenome da pessoa ou razão social da empresa (Ex: se o usuário disser "cliente breno menon", o nome DEVE ser apenas "Breno Menon"). NUNCA extraia frases de condição, prazos ou ações como nome (ex: "Liberado Dps Que O Cliente Voltar de Viagem" NÃO é nome de cliente!). Se não houver nome claro, deixe "".
+   - phone: Telefone ou WhatsApp com DDD informado pelo usuário, formatado. Se não houver número, retorne "".
+   - document: CPF ou CNPJ informado pelo usuário. Se não houver, retorne "".
+   - address: Endereço ou cidade informados. Se não houver, retorne "".
+   - email: E-mail se informado. Se não houver, retorne "".
 2. items: Array com o serviço ou serviços solicitados:
-   - name: Nome do serviço conforme o usuário pediu (Ex: "Criação de Landing Page Personalizada por IA").
-   - description: Descrição profissional e comercial atraente dos entregáveis do serviço.
-   - quantity: Quantidade (padrão 1).
-   - unitPrice: O valor monetário do serviço em reais (ex: 800). NUNCA confunda o prazo (ex: 7 dias) com o valor monetário!
+   - name: Nome do serviço ou produto solicitado pelo usuário.
+   - description: "" (vazio se o usuário não detalhou).
+   - quantity: Quantidade especificada ou 1.
+   - unitPrice: O valor numérico em reais falado pelo usuário.
    - totalPrice: quantity * unitPrice.
-3. categorySpecificFields: 3 ou mais tópicos adaptados ao ramo:
-   - Plataforma / Escopo
-   - Prazo de Entrega (conforme especificado no texto, ex: 7 dias)
-   - Suporte Técnico / Garantia
+3. categorySpecificFields: Array contendo APENAS campos cujos valores foram expressamente informados (ex: se informou prazo "7 dias", inclua o campo de prazo. Se NÃO informou, deixe o array vazio []).
 4. Condições comerciais:
-   - paymentTerms: Condições de pagamento. Se o cliente especificou observação de pagamento (ex: "ele só vai pagar quando fechar a venda do sítio dele"), COLOQUE ESSA CONDIÇÃO CLARAMENTE aqui!
-   - validityDays: Validade da proposta (ex: 15).
-   - notes: Observações gerais. SE HOUVER OBS NO TEXTO (ex: obs do sítio), MANTENHA E DESTAQUE ESSA OBSERVAÇÃO AQUI!`;
+   - paymentTerms: APENAS se o usuário especificou forma de pagamento ou condição (ex: "ele só vai pagar quando voltar de viagem"), coloque essa condição aqui! Caso contrário, deixe "".
+   - validityDays: Número de dias de validade APENAS se o usuário falou (ex: "validade 10 dias"). Se não falou nada sobre validade, retorne null.
+   - notes: APENAS observações reais ditas pelo usuário (ex: "obs: liberado depois que voltar de viagem"). Se não falou nada, deixe "".`;
 
           const prompt = `Estruture este orçamento com fidelidade máxima:\n"""\n${text}\n"""\nEmpresa prestadora: ${companyName || "BL Core Gestão"}\nCategoria sugerida: ${category || instantParsed.category}\nCliente identificado: ${clientName || instantParsed.client.name}`;
 
@@ -126,12 +133,12 @@ REGRAS MANDATÓRIAS DE EXTRAÇÃO:
               const mergedClient = {
                 name: parsed.client?.name && parsed.client.name !== "Cliente"
                   ? cleanClientName(parsed.client.name)
-                  : instantParsed.client.name,
+                  : (instantParsed.client.name || ""),
                 phone: parsed.client?.phone && parsed.client.phone !== "(00) 00000-0000"
                   ? parsed.client.phone
-                  : instantParsed.client.phone,
-                document: parsed.client?.document || instantParsed.client.document,
-                address: parsed.client?.address || instantParsed.client.address,
+                  : (instantParsed.client.phone || ""),
+                document: parsed.client?.document || instantParsed.client.document || "",
+                address: parsed.client?.address || instantParsed.client.address || "",
                 email: parsed.client?.email || instantParsed.client.email || "",
               };
 
@@ -144,8 +151,8 @@ REGRAS MANDATÓRIAS DE EXTRAÇÃO:
                     const qty = Number(it.quantity) || 1;
                     return {
                       id: `item-${Date.now()}-${idx}`,
-                      name: String(it.name || instantParsed.items[0]?.name || "Serviço Especializado"),
-                      description: String(it.description || instantParsed.items[0]?.description || "Execução com padrão profissional"),
+                      name: String(it.name || instantParsed.items[0]?.name || "Serviço"),
+                      description: String(it.description || ""),
                       quantity: qty,
                       unitPrice: itPrice,
                       totalPrice: qty * itPrice,
@@ -162,16 +169,16 @@ REGRAS MANDATÓRIAS DE EXTRAÇÃO:
                 category: parsed.category || instantParsed.category,
                 client: mergedClient,
                 categorySpecificFields:
-                  Array.isArray(parsed.categorySpecificFields) && parsed.categorySpecificFields.length > 0
+                  Array.isArray(parsed.categorySpecificFields)
                     ? parsed.categorySpecificFields
                     : instantParsed.categorySpecificFields,
                 items: mergedItems,
                 subtotal,
                 discount,
                 total,
-                paymentTerms: parsed.paymentTerms || instantParsed.paymentTerms,
-                validityDays: Number(parsed.validityDays) || instantParsed.validityDays,
-                notes: parsed.notes || instantParsed.notes,
+                paymentTerms: parsed.paymentTerms ?? instantParsed.paymentTerms ?? "",
+                validityDays: parsed.validityDays ? Number(parsed.validityDays) : instantParsed.validityDays,
+                notes: parsed.notes ?? instantParsed.notes ?? "",
               };
 
               usedGemini = true;

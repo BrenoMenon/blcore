@@ -105,52 +105,34 @@ export function QuoteInputSection({
         title: budget.title || "Orçamento de Serviços",
         category: budget.category || companyCategory || "Serviços Gerais",
         client: {
-          name: budget.client?.name || "Cliente",
-          phone: budget.client?.phone || "(00) 00000-0000",
+          name: budget.client?.name || "",
+          phone: budget.client?.phone || "",
           email: budget.client?.email || "",
           document: budget.client?.document || "",
           address: budget.client?.address || "",
         },
-        categorySpecificFields:
-          Array.isArray(budget.categorySpecificFields) && budget.categorySpecificFields.length > 0
-            ? budget.categorySpecificFields
-            : [
-                {
-                  key: "plataforma",
-                  label: "Plataforma / Escopo",
-                  value: budget.items?.[0]?.name || "Projeto Personalizado",
-                },
-                {
-                  key: "prazo",
-                  label: "Prazo de Entrega",
-                  value: "7 dias",
-                },
-                {
-                  key: "suporte",
-                  label: "Garantia / Suporte",
-                  value: "30 dias de suporte pós-lançamento",
-                },
-              ],
+        categorySpecificFields: Array.isArray(budget.categorySpecificFields)
+          ? budget.categorySpecificFields
+          : [],
         items:
           Array.isArray(budget.items) && budget.items.length > 0
             ? budget.items
             : [
                 {
                   id: `item-${Date.now()}-1`,
-                  name: budget.title?.replace(/^Orçamento de\s+/i, "") || "Criação de Landing Page Personalizada por IA",
-                  description: "Desenvolvimento profissional completo e responsivo com IA.",
+                  name: "Serviço Prestado",
+                  description: "",
                   quantity: 1,
-                  unitPrice: budget.subtotal || 800,
-                  totalPrice: budget.subtotal || 800,
+                  unitPrice: budget.subtotal || 0,
+                  totalPrice: budget.subtotal || 0,
                 },
               ],
-        subtotal: budget.subtotal || 800,
+        subtotal: budget.subtotal || 0,
         discount: budget.discount || 0,
-        total: budget.total || budget.subtotal || 800,
-        paymentTerms: budget.paymentTerms || "A combinar com o cliente",
-        validityDays: budget.validityDays || 15,
-        notes:
-          budget.notes || "Validade da proposta de 15 dias corridos. Início dos serviços mediante aprovação.",
+        total: budget.total || budget.subtotal || 0,
+        paymentTerms: budget.paymentTerms || "",
+        validityDays: budget.validityDays ?? null,
+        notes: budget.notes || "",
         branding: {
           ...branding,
           companyName: companyName || branding.companyName || "Minha Empresa",
@@ -160,7 +142,9 @@ export function QuoteInputSection({
 
       toast.dismiss(toastId);
       toast.success("Orçamento estruturado com sucesso pela IA!", {
-        description: `Cliente identificado: ${completeQuote.client.name}`,
+        description: completeQuote.client.name
+          ? `Cliente identificado: ${completeQuote.client.name}`
+          : "Revise os campos e complete os dados desejados.",
       });
 
       onOrganized(completeQuote);

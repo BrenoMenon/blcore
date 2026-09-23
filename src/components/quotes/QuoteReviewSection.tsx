@@ -824,8 +824,15 @@ export function QuoteReviewSection({
               type="number"
               min="1"
               max="90"
-              value={quote.validityDays}
-              onChange={(e) => onChange({ ...quote, validityDays: Number(e.target.value) || 15 })}
+              value={quote.validityDays ?? ""}
+              onChange={(e) => {
+                const val = e.target.value.trim();
+                onChange({
+                  ...quote,
+                  validityDays: val === "" ? null : Number(val),
+                });
+              }}
+              placeholder="Ex: 15 (opcional)"
               className="h-9 text-xs mt-1"
             />
           </div>

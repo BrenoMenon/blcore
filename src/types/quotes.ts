@@ -48,7 +48,7 @@ export interface QuoteData {
   discount: number;
   total: number;
   paymentTerms: string;
-  validityDays: number;
+  validityDays?: number | null;
   notes: string;
   branding: CompanyBranding;
 }
