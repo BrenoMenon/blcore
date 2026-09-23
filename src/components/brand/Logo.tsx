@@ -18,10 +18,15 @@ export function Logo({ className, showText = true, size = "md" }: {
         <BrandMark />
       </div>
       {showText && (
-        <div className="flex min-w-0 flex-col leading-tight">
-          <span className={cn("bl-gradient-text font-extrabold tracking-tight", t)}>BL CORE</span>
-          <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-            Gestão
+        <div className="flex min-w-0 flex-col justify-center leading-none">
+          <span className={cn("bl-gradient-text font-extrabold tracking-tight leading-none", t)}>BL CORE</span>
+          <span
+            className={cn(
+              "font-semibold uppercase text-foreground/80 transition-colors leading-none tracking-[0.28em]",
+              size === "sm" ? "text-[7px] mt-[1px]" : size === "lg" ? "text-[10px] mt-[2px]" : "text-[8.5px] mt-[1.5px]"
+            )}
+          >
+            GESTÃO
           </span>
         </div>
       )}

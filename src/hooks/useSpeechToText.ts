@@ -37,26 +37,25 @@ export function useSpeechToText({
     };
 
     recognition.onresult = (event: any) => {
-      let currentFinal = "";
-      let currentInterim = "";
+      let fullFinal = "";
+      let fullInterim = "";
 
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
+      for (let i = 0; i < event.results.length; ++i) {
         const item = event.results[i];
         if (item.isFinal) {
-          currentFinal += item[0].transcript + " ";
+          fullFinal += item[0].transcript + " ";
         } else {
-          currentInterim += item[0].transcript;
+          fullInterim += item[0].transcript;
         }
       }
 
-      if (currentFinal) {
-        setTranscript((prev) => {
-          const next = (prev + " " + currentFinal).trim();
-          if (onResultRef.current) onResultRef.current(next);
-          return next;
-        });
+      fullFinal = fullFinal.trim();
+      setTranscript(fullFinal);
+      setInterimTranscript(fullInterim);
+
+      if (fullFinal && onResultRef.current) {
+        onResultRef.current(fullFinal);
       }
-      setInterimTranscript(currentInterim);
     };
 
     recognition.onerror = (event: any) => {

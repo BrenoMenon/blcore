@@ -152,7 +152,7 @@ function ServiceDialog({ open, onOpenChange, editing }: { open: boolean; onOpenC
   const { userId } = Route.useRouteContext();
   const qc = useQueryClient();
   const form = useForm<Form>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(schema) as any,
     values: {
       name: editing?.name ?? "",
       price: Number(editing?.price ?? 0),
@@ -191,7 +191,7 @@ function ServiceDialog({ open, onOpenChange, editing }: { open: boolean; onOpenC
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader><DialogTitle>{editing ? t("Editar serviço") : t("Novo serviço")}</DialogTitle></DialogHeader>
-        <form onSubmit={form.handleSubmit((v) => save.mutate(v))} className="space-y-3">
+        <form onSubmit={form.handleSubmit((v: any) => save.mutate(v))} className="space-y-3">
           <div>
             <Label>{t("Nome *")}</Label>
             <Input {...form.register("name")} />

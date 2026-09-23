@@ -84,10 +84,18 @@ function QuotesPage() {
             .maybeSingle(),
           supabase
             .from("company_settings")
-            .select("company_name, logo_url, primary_color, phone, whatsapp, address")
+            .select("company_name, logo_url, primary_color, phone, whatsapp, address, whatsapp_config")
             .eq("user_id", userId)
             .maybeSingle(),
         ]);
+
+        const cnpj =
+          (settings?.whatsapp_config as any)?.cnpj ||
+          (settings as any)?.cnpj ||
+          (profile as any)?.cnpj ||
+          localStorage.getItem(`blcore_cnpj_${userId}`) ||
+          localStorage.getItem("blcore_company_cnpj") ||
+          "";
 
         const companyName =
           settings?.company_name || profile?.business_name || "BL Core Gestão";
@@ -101,6 +109,7 @@ function QuotesPage() {
         return {
           companyName,
           category,
+          cnpj,
           logoUrl,
           phone: whatsapp || phone,
           whatsapp,
@@ -110,9 +119,14 @@ function QuotesPage() {
         };
       } catch (err) {
         console.error("Error loading company info for quotes:", err);
+        const fallbackCnpj =
+          localStorage.getItem(`blcore_cnpj_${userId}`) ||
+          localStorage.getItem("blcore_company_cnpj") ||
+          "";
         return {
           companyName: "BL Core Gestão",
           category: "Social Media",
+          cnpj: fallbackCnpj,
           logoUrl: "",
           phone: "",
           whatsapp: "",
@@ -129,7 +143,11 @@ function QuotesPage() {
   const [branding, setBranding] = useState<CompanyBranding>({
     companyName: "BL Core Gestão",
     category: "Social Media",
-    cnpj: "",
+    cnpj:
+      (typeof window !== "undefined" &&
+        (localStorage.getItem(`blcore_cnpj_${userId}`) ||
+          localStorage.getItem("blcore_company_cnpj"))) ||
+      "",
     email: userEmailAuth,
     logoUrl: "",
     phone: "",
@@ -147,6 +165,7 @@ function QuotesPage() {
         ...prev,
         companyName: companyData.companyName,
         category: companyData.category,
+        cnpj: companyData.cnpj || prev.cnpj || "",
         logoUrl: companyData.logoUrl || prev.logoUrl,
         phone: companyData.phone || prev.phone,
         whatsapp: companyData.whatsapp || prev.whatsapp,
@@ -172,7 +191,24 @@ function QuotesPage() {
 
   // When AI organizes the budget, move to review step
   function handleQuoteOrganized(quote: QuoteData) {
-    setCurrentQuote(quote);
+    const activeCnpj =
+      quote.branding?.cnpj ||
+      branding.cnpj ||
+      companyData?.cnpj ||
+      (typeof window !== "undefined" &&
+        (localStorage.getItem(`blcore_cnpj_${userId}`) ||
+          localStorage.getItem("blcore_company_cnpj"))) ||
+      "";
+
+    const completeQuote: QuoteData = {
+      ...quote,
+      branding: {
+        ...quote.branding,
+        ...branding,
+        cnpj: activeCnpj,
+      },
+    };
+    setCurrentQuote(completeQuote);
     setCurrentStep("review");
   }
 

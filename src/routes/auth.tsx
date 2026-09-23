@@ -19,7 +19,6 @@ import { RECOVERY_QUESTIONS } from "@/lib/recovery-questions";
 import { saveRecoveryKey, getRecoveryQuestion, resetWithRecovery } from "@/lib/recovery.functions";
 import { useI18n, useT } from "@/lib/i18n";
 import { friendlyError } from "@/lib/auth-errors";
-import { LanguageSelect } from "@/components/common/LanguageSelect";
 
 const searchSchema = z.object({
   mode: z.enum(["login", "signup"]).optional(),
@@ -44,6 +43,7 @@ const signupSchema = loginSchema.extend({
   full_name: z.string().min(2, "Informe seu nome"),
   user_type: z.enum(["client", "company"]),
   business_name: z.string().optional(),
+  cnpj: z.string().optional(),
   question: z.string().min(3, "Escolha uma pergunta"),
   answer: z.string().min(2, "Informe a resposta"),
 });
@@ -64,15 +64,11 @@ function AuthPage() {
 
         <div className="relative flex items-center justify-center px-4 py-10 sm:px-6 lg:px-10">
           <div className="absolute right-4 top-4 flex items-center gap-2 sm:right-6 sm:top-6">
-            <LanguageSelect variant="outline" />
             <ThemeToggle />
           </div>
           <div className="w-full max-w-md">
             <div className="mb-8 flex flex-col items-center gap-3 lg:hidden">
               <Logo size="lg" />
-              <p className="text-center text-sm text-muted-foreground">
-                BL Core Gestão
-              </p>
             </div>
 
             <div className="rounded-3xl border border-border bg-card p-6 shadow-[0_24px_60px_-20px_rgba(0,0,0,0.55)] sm:p-8">
@@ -165,25 +161,27 @@ function HeroPanel() {
         <div className="grid h-11 w-11 place-items-center rounded-2xl bg-white/15 text-white backdrop-blur">
           <BrandMark />
         </div>
-        <div className="leading-tight">
-          <p className="text-lg font-extrabold tracking-tight">BL CORE</p>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-white/70">Gestão</p>
+        <div className="flex flex-col justify-center leading-none">
+          <p className="text-lg font-extrabold tracking-tight leading-none">BL CORE</p>
+          <p className="text-[9.5px] font-semibold uppercase tracking-[0.26em] text-white/80 leading-none mt-0.5">Gestão</p>
         </div>
       </div>
 
-      <div className="relative z-10 max-w-lg space-y-8">
+      <div className="relative z-10 max-w-lg space-y-7">
         <div>
           <h2 className="text-4xl font-extrabold leading-[1.1] tracking-tight xl:text-5xl">
-            {t("O controle do seu tempo na palma da mão.")}
+            {t("O controle do seu negócio na palma da mão.")}
           </h2>
           <p className="mt-4 text-base text-white/80">
-            {t("Agenda, clientes e serviços em um só lugar — rápido, bonito e feito para quem vive de horário marcado.")}
+            {t("Agenda, orçamentos com IA, clientes e serviços em um só lugar — rápido, profissional e completo.")}
           </p>
         </div>
 
-        <ul className="space-y-3.5">
+        <ul className="space-y-3">
+          <Perk text={t("Orçamentos profissionais com IA e exportação em PDF")} />
+          <Perk text={t("Criação rápida de propostas por voz ou texto")} />
           <Perk text={t("Agendamentos com confirmação no WhatsApp")} />
-          <Perk text={t("CRM de clientes automático")} />
+          <Perk text={t("CRM de clientes com histórico de orçamentos e serviços")} />
           <Perk text={t("Bloqueio inteligente de horários em conflito")} />
           <Perk text={t("Dados protegidos e isolados por conta")} />
         </ul>
@@ -285,6 +283,25 @@ function SignupForm({ onDone }: { onDone: (type: "client" | "company") => void }
       toast.warning(t("Conta criada"), { description: t("Não conseguimos salvar a chave de recuperação agora. Configure em Ajustes.") });
     }
 
+    if (v.user_type === "company" && v.cnpj?.trim()) {
+      try {
+        const cleanCnpj = v.cnpj.trim();
+        localStorage.setItem("blcore_company_cnpj", cleanCnpj);
+        const userRes = await supabase.auth.getUser();
+        const uid = userRes.data.user?.id || data.user?.id;
+        if (uid) {
+          localStorage.setItem(`blcore_cnpj_${uid}`, cleanCnpj);
+          await supabase.from("company_settings").upsert({
+            user_id: uid,
+            company_name: v.business_name || v.full_name,
+            whatsapp_config: { cnpj: cleanCnpj },
+          });
+        }
+      } catch (err) {
+        console.warn("Could not save company CNPJ during registration:", err);
+      }
+    }
+
     toast.success(t("Conta criada!"), {
       description: t(
         v.user_type === "company"
@@ -318,9 +335,14 @@ function SignupForm({ onDone }: { onDone: (type: "client" | "company") => void }
         <Input placeholder={t("Seu nome")} autoComplete="name" {...form.register("full_name")} />
       </Field>
       {userType === "company" && (
-        <Field label={t("Nome do negócio")}>
-          <Input placeholder="Ex: BL Core Barbearia" {...form.register("business_name")} />
-        </Field>
+        <>
+          <Field label={t("Nome do negócio")}>
+            <Input placeholder="Ex: BL Core Barbearia" {...form.register("business_name")} />
+          </Field>
+          <Field label={t("CNPJ (opcional)")}>
+            <Input placeholder="00.000.000/0000-00" {...form.register("cnpj")} />
+          </Field>
+        </>
       )}
       <Field label={t("E-mail")} error={form.formState.errors.email?.message && t(form.formState.errors.email.message)}>
         <Input type="email" placeholder={t("voce@exemplo.com")} autoComplete="email" {...form.register("email")} />

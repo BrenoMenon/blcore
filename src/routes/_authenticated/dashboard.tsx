@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CalendarClock, CalendarPlus, CheckCircle2, TrendingUp, Users, Wallet, Wrench } from "lucide-react";
+import { CalendarClock, CalendarPlus, CheckCircle2, FileText, TrendingUp, Users, Wallet, Wrench } from "lucide-react";
 import { addDays, endOfDay, format, startOfDay, startOfMonth, startOfWeek, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -83,12 +83,17 @@ function DashboardPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-sm text-muted-foreground">{format(now, "EEEE, dd 'de' MMMM", { locale: dfLocale })}</p>
+          <p className="text-xs sm:text-sm text-muted-foreground">{format(now, "EEEE, dd 'de' MMMM", { locale: dfLocale })}</p>
           <h1 className="text-2xl font-bold sm:text-3xl">{t("Dashboard")}</h1>
         </div>
-        <Button asChild size="lg" className="shadow-[var(--shadow-glow)]">
-          <Link to="/appointments"><CalendarPlus className="mr-2 h-4 w-4" /> {t("Novo agendamento")}</Link>
-        </Button>
+        <div className="flex flex-col gap-2 w-full sm:w-auto sm:items-end">
+          <Button asChild size="default" className="shadow-[var(--shadow-glow)] w-full sm:w-auto h-10 px-5">
+            <Link to="/appointments"><CalendarPlus className="mr-2 h-4 w-4" /> {t("Novo agendamento")}</Link>
+          </Button>
+          <Button asChild variant="outline" size="sm" className="w-full sm:w-auto h-9 px-4 border-primary/40 bg-card/70 hover:bg-primary/15 text-foreground hover:text-primary transition-all">
+            <Link to="/quotes"><FileText className="mr-2 h-3.5 w-3.5 text-primary" /> {t("Novo orçamento")}</Link>
+          </Button>
+        </div>
       </div>
 
       <PendingRequests userId={userId} />
@@ -178,7 +183,7 @@ function DashboardPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-4">
         <StatCard label={t("Agendamentos hoje")} value={stats.data?.todayCount} icon={CalendarClock} tone="primary" loading={stats.isLoading} />
         <StatCard label={t("Clientes")} value={stats.data?.clientsCount} icon={Users} tone="accent" loading={stats.isLoading} />
         <StatCard label={t("Serviços ativos")} value={stats.data?.servicesCount} icon={Wrench} tone="cyan" loading={stats.isLoading} />
@@ -282,21 +287,34 @@ function StatCard({ label, value, icon: Icon, tone, loading }: {
 }) {
   const bg = {
     primary: "var(--brand-green)",
-    accent: "var(--brand-blue)",
+    accent: "#38bdf8", // Ícone azul claro e luminoso para clientes
     cyan: "var(--brand-cyan)",
     green: "var(--brand-green)",
   }[tone];
   return (
-    <Card className="bl-glass overflow-hidden">
-      <CardContent className="flex items-center justify-between gap-2 p-4 sm:p-5">
-        <div className="min-w-0">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-          {loading
-            ? <Skeleton className="mt-2 h-8 w-16" />
-            : <p className="mt-1 text-2xl font-extrabold sm:text-3xl">{value ?? 0}</p>}
+    <Card className="bl-glass overflow-hidden h-full">
+      <CardContent className="flex flex-col justify-between h-full p-3 sm:p-4.5">
+        <div className="flex items-start justify-between gap-1.5 sm:gap-2.5">
+          <div className="h-8 sm:h-9 flex items-center pr-0.5 min-w-0 flex-1">
+            <p className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-muted-foreground leading-tight line-clamp-2">
+              {label}
+            </p>
+          </div>
+          <div
+            className="grid h-7 w-7 sm:h-8 sm:w-8 shrink-0 place-items-center rounded-full mt-0.5"
+            style={{
+              background: `color-mix(in oklab, ${bg} 22%, transparent)`,
+              color: bg,
+              boxShadow: `0 0 12px -1px color-mix(in oklab, ${bg} 35%, transparent)`,
+            }}
+          >
+            <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+          </div>
         </div>
-        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl sm:h-12 sm:w-12" style={{ background: `color-mix(in oklab, ${bg} 20%, transparent)`, color: bg }}>
-          <Icon className="h-6 w-6" />
+        <div className="mt-2 sm:mt-2.5">
+          {loading
+            ? <Skeleton className="h-7 w-12 sm:h-8 sm:w-16" />
+            : <p className="text-xl sm:text-3xl font-extrabold tabular-nums tracking-tight">{value ?? 0}</p>}
         </div>
       </CardContent>
     </Card>

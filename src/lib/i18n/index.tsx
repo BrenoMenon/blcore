@@ -48,36 +48,30 @@ type Ctx = {
 const I18nContext = createContext<Ctx>({ lang: "pt", setLang: () => {}, t: (s) => s });
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [lang, setLangState] = useState<Lang>("pt");
+  const lang: Lang = "pt";
 
   useEffect(() => {
     try {
-      const stored = localStorage.getItem(STORAGE_KEY) as Lang | null;
-      if (stored && stored in DICTS) setLangState(stored);
+      localStorage.setItem(STORAGE_KEY, "pt");
     } catch {
       /* ignore */
     }
   }, []);
 
   useEffect(() => {
-    if (typeof document !== "undefined") document.documentElement.lang = HTML_LANG[lang];
-  }, [lang]);
+    if (typeof document !== "undefined") document.documentElement.lang = "pt-BR";
+  }, []);
 
-  const setLang = useCallback((l: Lang) => {
-    setLangState(l);
-    try {
-      localStorage.setItem(STORAGE_KEY, l);
-    } catch {
-      /* ignore */
-    }
+  const setLang = useCallback((_l: Lang) => {
+    // Only Portuguese is allowed
   }, []);
 
   const t = useCallback(
-    (text: string, vars?: Record<string, string | number>) => translate(lang, text, vars),
-    [lang],
+    (text: string, vars?: Record<string, string | number>) => translate("pt", text, vars),
+    [],
   );
 
-  const value = useMemo(() => ({ lang, setLang, t }), [lang, setLang, t]);
+  const value = useMemo(() => ({ lang: "pt" as Lang, setLang, t }), [setLang, t]);
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 

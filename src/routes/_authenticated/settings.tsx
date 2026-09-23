@@ -26,6 +26,7 @@ export const Route = createFileRoute("/_authenticated/settings")({
 
 const schema = z.object({
   company_name: z.string().min(1, "Obrigatório").max(120),
+  cnpj: z.string().max(30).optional().or(z.literal("")),
   whatsapp: z.string().max(30).optional().or(z.literal("")),
   phone: z.string().max(30).optional().or(z.literal("")),
   address: z.string().max(300).optional().or(z.literal("")),
@@ -44,28 +45,52 @@ function SettingsPage() {
 
   const form = useForm<Form>({
     resolver: zodResolver(schema),
-    defaultValues: { company_name: "BL Core Gestão", whatsapp: "", phone: "", address: "" },
+    defaultValues: { company_name: "BL Core Gestão", cnpj: "", whatsapp: "", phone: "", address: "" },
   });
 
   useEffect(() => {
+    const savedCnpj =
+      (data?.whatsapp_config as any)?.cnpj ||
+      (data as any)?.cnpj ||
+      localStorage.getItem(`blcore_cnpj_${userId}`) ||
+      localStorage.getItem("blcore_company_cnpj") ||
+      "";
+
     if (data) {
       form.reset({
         company_name: data.company_name ?? "",
+        cnpj: savedCnpj,
         whatsapp: data.whatsapp ? formatPhoneBR(data.whatsapp) : "",
         phone: data.phone ? formatPhoneBR(data.phone) : "",
         address: data.address ?? "",
       });
+    } else if (savedCnpj) {
+      form.setValue("cnpj", savedCnpj);
     }
-  }, [data, form]);
+  }, [data, form, userId]);
 
   const save = useMutation({
     mutationFn: async (v: Form) => {
-      const { error } = await supabase.from("company_settings").update({
+      const cleanCnpj = v.cnpj?.trim() || "";
+      if (cleanCnpj) {
+        localStorage.setItem(`blcore_cnpj_${userId}`, cleanCnpj);
+        localStorage.setItem("blcore_company_cnpj", cleanCnpj);
+      } else {
+        localStorage.removeItem(`blcore_cnpj_${userId}`);
+        localStorage.removeItem("blcore_company_cnpj");
+      }
+
+      const existingConfig = (data?.whatsapp_config as Record<string, any>) || {};
+      const updatedConfig = { ...existingConfig, cnpj: cleanCnpj };
+
+      const { error } = await supabase.from("company_settings").upsert({
+        user_id: userId,
         company_name: v.company_name,
         whatsapp: v.whatsapp || null,
         phone: v.phone || null,
         address: v.address || null,
-      }).eq("user_id", userId);
+        whatsapp_config: updatedConfig,
+      });
       if (error) throw error;
 
       // Mantém o contato público da empresa em sincronia (usado pelos clientes)
@@ -103,6 +128,10 @@ function SettingsPage() {
               <div className="sm:col-span-2">
                 <Label>{t("Nome da empresa")}</Label>
                 <Input {...form.register("company_name")} />
+              </div>
+              <div className="sm:col-span-2">
+                <Label>{t("CNPJ da empresa (opcional)")}</Label>
+                <Input placeholder="00.000.000/0000-00" {...form.register("cnpj")} />
               </div>
               <Controller
                 name="whatsapp"

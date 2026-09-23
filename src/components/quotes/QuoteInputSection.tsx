@@ -91,19 +91,39 @@ export function QuoteInputSection({
         category: budget.category || companyCategory || "Serviços Gerais",
         client: {
           name: budget.client?.name || "Cliente",
-          phone: budget.client?.phone || "",
+          phone: budget.client?.phone || "(00) 00000-0000",
           email: budget.client?.email || "",
           document: budget.client?.document || "",
           address: budget.client?.address || "",
         },
-        categorySpecificFields: budget.categorySpecificFields || [],
-        items: budget.items || [],
-        subtotal: budget.subtotal || 0,
+        categorySpecificFields:
+          Array.isArray(budget.categorySpecificFields) && budget.categorySpecificFields.length > 0
+            ? budget.categorySpecificFields
+            : [
+                { key: "plataforma", label: "Plataforma / Escopo", value: "Instagram & Redes Sociais" },
+                { key: "prazo", label: "Prazo de Entrega", value: "7 a 15 dias úteis" },
+                { key: "suporte", label: "Suporte Técnico", value: "30 dias de suporte pós-lançamento" },
+              ],
+        items:
+          Array.isArray(budget.items) && budget.items.length > 0
+            ? budget.items
+            : [
+                {
+                  id: `item-${Date.now()}-1`,
+                  name: "Gestão de Mídias Sociais & Conteúdo",
+                  description: "Planejamento, design de layout e publicação",
+                  quantity: 1,
+                  unitPrice: 300,
+                  totalPrice: 300,
+                },
+              ],
+        subtotal: budget.subtotal || 300,
         discount: budget.discount || 0,
-        total: budget.total || 0,
-        paymentTerms: budget.paymentTerms || "PIX à vista ou Cartão",
+        total: budget.total || budget.subtotal || 300,
+        paymentTerms: budget.paymentTerms || "PIX à vista ou Cartão de Crédito",
         validityDays: budget.validityDays || 15,
-        notes: budget.notes || "",
+        notes:
+          budget.notes || "Validade da proposta de 15 dias corridos. Início dos serviços mediante aprovação.",
         branding: {
           ...branding,
           companyName: companyName || branding.companyName || "Minha Empresa",

@@ -11,7 +11,6 @@ import { cn } from "@/lib/utils";
 import { useTheme } from "@/components/theme-provider";
 import { NotificationsBell } from "@/components/common/NotificationsBell";
 import { SiteFooter } from "@/components/common/SiteFooter";
-import { LanguageSelect } from "@/components/common/LanguageSelect";
 import { useT } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_authenticated")({
@@ -117,8 +116,8 @@ function MobileBottomNav() {
   const nav = useNav();
   const t = useT();
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/95 backdrop-blur-md md:hidden">
-      <div className={cn("grid", nav.length === 3 ? "grid-cols-3" : nav.length === 6 ? "grid-cols-6" : "grid-cols-5")}>
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/70 bg-card/95 backdrop-blur-md pb-[env(safe-area-inset-bottom,0px)] md:hidden">
+      <div className={cn("grid w-full items-center", nav.length === 3 ? "grid-cols-3" : nav.length === 6 ? "grid-cols-6" : "grid-cols-5")}>
         {nav.map((item) => {
           const active = path.startsWith(item.to);
           return (
@@ -126,12 +125,14 @@ function MobileBottomNav() {
               key={item.to}
               to={item.to}
               className={cn(
-                "flex flex-col items-center gap-1 py-2.5 text-[10px] font-medium",
-                active ? "text-primary" : "text-muted-foreground",
+                "flex flex-col items-center justify-center gap-1 py-2 px-0.5 text-[9.5px] transition-colors select-none",
+                active ? "text-primary font-semibold" : "text-muted-foreground hover:text-foreground font-medium",
               )}
             >
-              <item.icon className="h-5 w-5" />
-              {t(item.label)}
+              <item.icon className="h-4 w-4 shrink-0" />
+              <span className="truncate max-w-full leading-none tracking-tight">
+                {t(item.label)}
+              </span>
             </Link>
           );
         })}
@@ -169,7 +170,6 @@ function TopBar() {
       <div className="hidden md:block" />
       <div className="flex items-center gap-1.5 sm:gap-3">
         <NotificationsBell userId={userId} />
-        <LanguageSelect />
         <ThemeToggle />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
