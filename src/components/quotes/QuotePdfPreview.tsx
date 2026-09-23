@@ -118,24 +118,57 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
 
     const element = pdfRef.current;
 
-    const canvas = await html2canvas(element, {
-      scale: 2,
-      useCORS: true,
-      allowTaint: true,
-      logging: false,
-      backgroundColor: "#ffffff",
-      scrollX: 0,
-      scrollY: 0,
-      windowWidth: 794,
-      onclone: (clonedDoc) => {
-        // Garantir escala 1:1 sem distorção mobile
-        const el = clonedDoc.getElementById("quote-printable-document");
-        if (el) {
-          el.style.transform = "none";
-          el.style.margin = "0";
-        }
-      },
-    });
+    // Clone element to a standalone, unscaled, white container offscreen
+    // This eliminates any dark-mode, backdrop-filter, or mobile-scale clipping issues
+    const clone = element.cloneNode(true) as HTMLElement;
+    clone.id = "quote-pdf-render-clone";
+    clone.style.transform = "none";
+    clone.style.margin = "0";
+    clone.style.position = "fixed";
+    clone.style.top = "-99999px";
+    clone.style.left = "-99999px";
+    clone.style.width = "794px";
+    clone.style.minHeight = "1123px";
+    clone.style.backgroundColor = "#ffffff";
+    clone.style.color = "#0f172a";
+    clone.style.zIndex = "-9999";
+    clone.style.display = "flex";
+    clone.style.flexDirection = "column";
+    clone.style.justifyContent = "space-between";
+    clone.classList.remove("dark");
+
+    document.body.appendChild(clone);
+
+    let canvas: HTMLCanvasElement;
+    try {
+      canvas = await html2canvas(clone, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        backgroundColor: "#ffffff",
+        scrollX: 0,
+        scrollY: 0,
+        width: 794,
+        windowWidth: 794,
+        onclone: (clonedDoc) => {
+          const el = clonedDoc.getElementById("quote-pdf-render-clone");
+          if (el) {
+            el.style.transform = "none";
+            el.style.backgroundColor = "#ffffff";
+            el.style.color = "#0f172a";
+          }
+          // Ensure root does not leak dark theme variables
+          clonedDoc.documentElement.classList.remove("dark");
+          clonedDoc.body.classList.remove("dark");
+          clonedDoc.body.style.backgroundColor = "#ffffff";
+        },
+      });
+    } finally {
+      if (document.body.contains(clone)) {
+        document.body.removeChild(clone);
+      }
+    }
 
     const imgData = canvas.toDataURL("image/png");
     const pdf = new jsPDF({
@@ -262,42 +295,50 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
       // 1. Native Web Share with file attachment (Mobile devices: opens WhatsApp contact list!)
       if (typeof navigator !== "undefined" && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
         toast.dismiss(toastId);
-        await navigator.share({
-          files: [pdfFile],
-          title: `Orçamento - ${clientName}`,
-          text: shareMessage,
-        });
-        onSaveToHistory(quote);
-        toast.success("Orçamento compartilhado!");
-      } else {
-        // 2. Fallback for desktop: download PDF and open WhatsApp Web with contact message
-        pdf.save(fileName);
-        onSaveToHistory(quote);
-
-        const phone = (quote.client.phone || "").replace(/\D/g, "");
-        const formattedTotal = quote.total.toLocaleString("pt-BR", {
-          style: "currency",
-          currency: "BRL",
-        });
-
-        const lines = [
-          `Olá ${clientName}!`,
-          `Aqui está o seu *${quote.title}* da *${quote.branding.companyName}*.`,
-          ``,
-          `*Total: ${formattedTotal}*`,
-          `*Condições:* ${quote.paymentTerms}`,
-          `*Validade:* Até ${validityDate}`,
-          ``,
-          `Ficamos à disposição para esclarecer qualquer dúvida!`,
-        ];
-
-        const message = encodeURIComponent(lines.join("\n"));
-        const url = phone ? `https://wa.me/55${phone}?text=${message}` : `https://wa.me/?text=${message}`;
-
-        window.open(url, "_blank");
-        toast.dismiss(toastId);
-        toast.success("PDF baixado e WhatsApp aberto para envio!");
+        try {
+          await navigator.share({
+            files: [pdfFile],
+            title: `Orçamento - ${clientName}`,
+            text: shareMessage,
+          });
+          onSaveToHistory(quote);
+          toast.success("Orçamento compartilhado com sucesso!");
+          return;
+        } catch (shareErr: any) {
+          if (shareErr.name === "AbortError") return;
+          // If native file share failed in this webview, continue to direct download + WhatsApp message
+        }
       }
+
+      // 2. Direct action: download the crisp PDF and open WhatsApp chat
+      pdf.save(fileName);
+      onSaveToHistory(quote);
+
+      const phone = (quote.client.phone || "").replace(/\D/g, "");
+      const formattedTotal = quote.total.toLocaleString("pt-BR", {
+        style: "currency",
+        currency: "BRL",
+      });
+
+      const lines = [
+        `Olá *${clientName}*!`,
+        `Aqui está o seu *${quote.title}* emitido por *${quote.branding.companyName}*.`,
+        ``,
+        `📄 *Arquivo do Orçamento:* ${fileName}`,
+        `💰 *Valor Total:* ${formattedTotal}`,
+        quote.paymentTerms ? `💳 *Condições:* ${quote.paymentTerms}` : "",
+        quote.validityDays ? `📅 *Validade:* Até ${validityDate}` : "",
+        quote.notes ? `📝 *Observação:* ${quote.notes}` : "",
+        ``,
+        `_O arquivo PDF oficial foi baixado no seu aparelho e pode ser anexado aqui nesta conversa._`,
+      ].filter(Boolean);
+
+      const message = encodeURIComponent(lines.join("\n"));
+      const url = phone ? `https://wa.me/55${phone}?text=${message}` : `https://wa.me/?text=${message}`;
+
+      window.open(url, "_blank");
+      toast.dismiss(toastId);
+      toast.success("PDF pronto e WhatsApp aberto para envio!");
     } catch (err: any) {
       toast.dismiss(toastId);
       // If user cancelled share sheet, do not show error

@@ -116,21 +116,44 @@ function MobileBottomNav() {
   const nav = useNav();
   const t = useT();
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/70 bg-card/95 backdrop-blur-md pb-[env(safe-area-inset-bottom,0px)] md:hidden">
-      <div className={cn("grid w-full items-center", nav.length === 3 ? "grid-cols-3" : nav.length === 6 ? "grid-cols-6" : "grid-cols-5")}>
-        {nav.map((item) => {
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/80 bg-card/95 backdrop-blur-lg pb-[env(safe-area-inset-bottom,6px)] pt-1 px-3 shadow-[0_-4px_20px_rgba(0,0,0,0.15)] md:hidden">
+      <div className={cn("flex w-full items-center justify-between gap-1 max-w-lg mx-auto")}>
+        {nav.map((item, idx) => {
           const active = path.startsWith(item.to);
+          const isFirst = idx === 0;
+          const isLast = idx === nav.length - 1;
           return (
             <Link
               key={item.to}
               to={item.to}
               className={cn(
-                "flex flex-col items-center justify-center gap-1 py-2 px-0.5 text-[9.5px] transition-colors select-none",
-                active ? "text-primary font-semibold" : "text-muted-foreground hover:text-foreground font-medium",
+                "group relative flex flex-1 flex-col items-center justify-center py-2 px-1 rounded-xl transition-all duration-150 select-none",
+                "active:scale-90 active:opacity-80",
+                // Nudge first button (Dashboard) away from the left screen edge/rounded corner
+                isFirst && "pl-2 sm:pl-3",
+                // Nudge last button (Ajustes) away from the right screen edge/rounded corner
+                isLast && "pr-2 sm:pr-3",
+                active
+                  ? "text-primary font-semibold"
+                  : "text-muted-foreground/80 hover:text-foreground font-medium"
               )}
             >
-              <item.icon className="h-4 w-4 shrink-0" />
-              <span className="truncate max-w-full leading-none tracking-tight">
+              <div
+                className={cn(
+                  "flex items-center justify-center p-1.5 rounded-xl transition-all duration-200",
+                  active
+                    ? "bg-primary/15 text-primary scale-105 shadow-xs"
+                    : "group-hover:bg-muted/50"
+                )}
+              >
+                <item.icon className="h-5 w-5 shrink-0 stroke-[2.2]" />
+              </div>
+              <span
+                className={cn(
+                  "truncate max-w-full text-[10px] leading-tight tracking-tight mt-0.5",
+                  active ? "text-primary font-bold" : "text-muted-foreground"
+                )}
+              >
                 {t(item.label)}
               </span>
             </Link>
