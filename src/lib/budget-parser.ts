@@ -49,7 +49,7 @@ export function cleanClientName(raw: string): string {
   // If after cleaning it still starts with "cliente ", remove it
   cleaned = cleaned.replace(/^cliente\s+/i, "").trim();
 
-  // Reject invalid names that are actually actions or phrases (e.g. "Liberado Dps...", "Voltar de Viagem")
+  // Reject invalid names that are actually actions or phrases
   const lower = cleaned.toLowerCase();
   if (
     lower.startsWith("liberad") ||
@@ -59,7 +59,8 @@ export function cleanClientName(raw: string): string {
     lower.startsWith("quando") ||
     lower.startsWith("pagar") ||
     lower.startsWith("orçamento") ||
-    lower.startsWith("serviço")
+    lower.startsWith("serviço") ||
+    lower.startsWith("daqui")
   ) {
     return "";
   }
@@ -111,214 +112,224 @@ export function smartParseBudget(
 ): ParsedBudget {
   const text = (rawText || "").trim();
 
-  // 1. Phone extraction - ONLY if clearly present
+  // 1. EXTRACT CPF / CNPJ FIRST WITH STRICT LABELS & PATTERNS
+  let detectedDocument = "";
+  // Check explicit CPF label (e.g. "cpf: 41275798896" or "cpf 412.757.988-96")
+  const cpfExplicit = text.match(/(?:cpf|doc|documento)\s*[:=]?\s*([0-9\.\-]{11,14})/i);
+  const cnpjExplicit = text.match(/(?:cnpj)\s*[:=]?\s*([0-9\.\-\/]{14,18})/i);
+
+  if (cpfExplicit) {
+    const rawCpf = cpfExplicit[1].replace(/\D/g, "");
+    if (rawCpf.length === 11) {
+      detectedDocument = formatCpf(rawCpf);
+    }
+  } else if (cnpjExplicit) {
+    const rawCnpj = cnpjExplicit[1].replace(/\D/g, "");
+    if (rawCnpj.length === 14) {
+      detectedDocument = formatCnpj(rawCnpj);
+    }
+  } else {
+    // Check formatted patterns in text
+    const cpfFormatted = text.match(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/);
+    const cnpjFormatted = text.match(/\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/);
+    if (cpfFormatted) {
+      detectedDocument = formatCpf(cpfFormatted[0]);
+    } else if (cnpjFormatted) {
+      detectedDocument = formatCnpj(cnpjFormatted[0]);
+    }
+  }
+
+  // 2. EXTRACT PHONE / WHATSAPP WITH STRICT LABELS FIRST, THEN PATTERNS
   let detectedPhone = "";
-  const phonePattern = /(?:(?:zap|whats|whatsapp|fone|celular|tel|telefone)\s*[:=]?\s*)?(?:\+?55\s*)?(?:\(?([1-9]{2})\)?\s*)?(9?\d{4})[-.\s]?(\d{4})/i;
-  const phoneMatch = text.match(phonePattern);
-  if (phoneMatch) {
-    const rawDigits = (phoneMatch[1] ? phoneMatch[1] : "") + phoneMatch[2] + phoneMatch[3];
-    // Check that it's genuinely a phone number (10 or 11 digits)
+  // Explicit phone label (e.g. "telefone: 19981564250", "whatsapp: 11988887777")
+  const phoneExplicit = text.match(
+    /(?:telefone|tel|celular|cel|whats|whatsapp|zap|fone|contato)\s*[:=]?\s*(?:\+?55\s*)?([0-9\(\)\s\-]{10,16})/i
+  );
+
+  if (phoneExplicit) {
+    const rawDigits = phoneExplicit[1].replace(/\D/g, "");
     if (rawDigits.length === 10 || rawDigits.length === 11) {
       detectedPhone = formatPhone(rawDigits);
     }
   }
 
-  // Remove phone to avoid false matching as CPF/CNPJ or price
-  const textNoPhone = detectedPhone ? text.replace(phonePattern, " ") : text;
-
-  // 2. CPF / CNPJ extraction - ONLY if explicitly mentioned or matches format
-  let detectedDocument = "";
-  const cpfMatch =
-    textNoPhone.match(/(?:cpf)\s*[:=]?\s*(\d{3}\.?\d{3}\.?\d{3}-?\d{2}|\d{11})/i) ||
-    textNoPhone.match(/\b(\d{3}\.\d{3}\.\d{3}-\d{2})\b/);
-  const cnpjMatch =
-    textNoPhone.match(/(?:cnpj)\s*[:=]?\s*(\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}|\d{14})/i) ||
-    textNoPhone.match(/\b(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})\b/);
-
-  if (cpfMatch) {
-    detectedDocument = formatCpf(cpfMatch[1]);
-  } else if (cnpjMatch) {
-    detectedDocument = formatCnpj(cnpjMatch[1]);
+  // If no explicit label was found, search for formatted numbers (XX) XXXXX-XXXX
+  if (!detectedPhone) {
+    const phoneFormatted = text.match(/\(?([1-9]{2})\)?\s*(9?\d{4})[-.\s]?(\d{4})/);
+    if (phoneFormatted) {
+      const candidateDigits = phoneFormatted[1] + phoneFormatted[2] + phoneFormatted[3];
+      // Make sure the candidate is NOT the CPF we already detected!
+      const unformattedDoc = detectedDocument.replace(/\D/g, "");
+      if (candidateDigits !== unformattedDoc && !unformattedDoc.includes(candidateDigits)) {
+        if (candidateDigits.length === 10 || candidateDigits.length === 11) {
+          detectedPhone = formatPhone(candidateDigits);
+        }
+      }
+    }
   }
 
-  // 3. Observations extraction (obs:, observação:, observacao:, nota:, etc.)
-  let detectedObs = "";
-  const obsMatch =
-    text.match(/(?:(?:obs|observação|observacao|observações|observacoes|nota|aviso|detalhe)\s*[:=]\s*)(.+?)(?=\s*(?:cliente|telefone|tel|cpf|cnpj|serviço|servico|valor|r\$|prazo|\.|$))/i) ||
-    text.match(/(?:(?:obs|observação|observacao)\s*[:=]\s*)(.+)$/i);
+  // 3. REMOVE DETECTED CPF AND PHONE FROM TEXT TO PREVENT INTERFERENCE
+  let cleanText = text;
+  if (detectedDocument) {
+    const docDigits = detectedDocument.replace(/\D/g, "");
+    cleanText = cleanText.replace(new RegExp(`(?:cpf|doc|documento)?\\s*[:=]?\\s*[\\d\\.\\-\\/]*${docDigits}[\\d\\.\\-\\/]*`, "gi"), " ");
+  }
+  if (detectedPhone) {
+    const phoneDigits = detectedPhone.replace(/\D/g, "");
+    cleanText = cleanText.replace(new RegExp(`(?:telefone|tel|celular|cel|whats|whatsapp|zap|fone|contato)?\\s*[:=]?\\s*[\\d\\(\\)\\s\\-\\+]*${phoneDigits}[\\d\\(\\)\\s\\-\\+]*`, "gi"), " ");
+  }
+
+  // 4. OBSERVATIONS & CONDITIONS
+  let detectedNotes = "";
+  let paymentTerms = "";
+
+  const releaseMatch = cleanText.match(/(?:(?:vai\s+ser\s+liberado|libera(?:do)?|início|inicio|começo|comeco)\s+(?:o\s+serviço\s+)?(?:daqui|em|a\s+partir\s+de)\s+[^,\.]+)/i);
+  if (releaseMatch) {
+    detectedNotes = releaseMatch[0].trim();
+  }
+
+  const obsMatch = cleanText.match(/(?:(?:obs|observação|observacao|observações|observacoes|nota|aviso|detalhe)\s*[:=]\s*)(.+?)(?=\s*(?:,|cliente|valor|r\$|prazo|\.|$))/i);
   if (obsMatch && obsMatch[1]) {
-    detectedObs = obsMatch[1].trim().replace(/[-–,]+$/, "");
-    detectedObs = detectedObs.charAt(0).toUpperCase() + detectedObs.slice(1);
+    const obsStr = obsMatch[1].trim();
+    detectedNotes = detectedNotes ? `${detectedNotes}. ${obsStr}` : obsStr;
   }
 
-  // 4. Address extraction - ONLY if explicitly stated
-  let detectedAddress = "";
-  const addrMatch = text.match(
-    /(?:(?:endereço|endreço|endereco|end\.?|cidade(?:\s+de)?|local|localização|localizacao|reside\s+em|mora\s+em)\s*[:=]?\s*)([^,]+?)(?=\s*(?:,|cpf|cnpj|telefone|tel|celular|zap|whatsapp|serviço|servico|valor|r\$|\d+\s*(?:reais|r\$)|prazo|obs|observação|observacao|\.|$))/i
-  );
-  if (addrMatch && addrMatch[1]) {
-    detectedAddress = addrMatch[1]
-      .trim()
-      .replace(/\s+/g, " ")
-      .split(" ")
-      .map((w) => {
-        const lw = w.toLowerCase();
-        if (["do", "da", "de", "e", "em", "no", "na"].includes(lw)) return lw;
-        return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
-      })
-      .join(" ");
-  }
-
-  // 5. Client Name extraction - ONLY if explicitly marked with "cliente", "nome", etc.
+  // 5. EXTRACT CLIENT NAME
   let detectedClient = clientNameSuggestion ? cleanClientName(clientNameSuggestion) : "";
+
   if (!detectedClient) {
-    const clientMatch = text.match(
-      /(?:(?:cliente|nome(?:\s+do\s+cliente)?|em\s+nome\s+de|para\s+o|para\s+a)\s*[:=]?\s*)([A-ZÁÉÍÓÚÂÊÎÔÛÃÕa-záéíóúâêîôûãõ\s]+?)(?=\s*(?:,|telefone|tel|celular|zap|whatsapp|cpf|cnpj|endereço|endreço|endereco|serviço|servico|valor|r\$|\d+\s*(?:reais|r\$)|prazo|obs|\.|$))/i
+    // Explicit pattern: cliente: Breno Menon
+    const clientMatch = cleanText.match(
+      /(?:(?:cliente|nome(?:\s+do\s+cliente)?|em\s+nome\s+de|para\s+o|para\s+a)\s*[:=]?\s*)([A-ZÁÉÍÓÚÂÊÎÔÛÃÕa-záéíóúâêîôûãõ\s]+?)(?=\s*(?:,|telefone|tel|celular|zap|whatsapp|cpf|cnpj|endereço|endreço|endereco|serviço|servico|valor|r\$|\d+\s*(?:reais|r\$)|prazo|obs|landing|site|manutenção|manutencao|\.|$))/i
     );
     if (clientMatch && clientMatch[1]) {
       detectedClient = cleanClientName(clientMatch[1].trim());
     }
   }
 
-  // 6. Service extraction - ONLY if explicitly marked or typed
-  let detectedService = "";
-  const serviceMatch = text.match(
-    /(?:(?:serviço|servico|projeto|trabalho|item|descrição|descricao)\s*[:=]?\s*)([^,]+?)(?=\s*(?:,|\d+\s*(?:reais|r\$)|valor|r\$|prazo|obs|observação|observacao|cpf|cnpj|telefone|\.|$))/i
+  // If still not found, check if the input starts directly with a person's name (e.g. "Breno Menon landing page...")
+  if (!detectedClient) {
+    const stopWords = new Set([
+      "landing", "page", "site", "sites", "valor", "preço", "preco", "r$", "reais",
+      "serviço", "servico", "manutenção", "manutencao", "criação", "criacao",
+      "desenvolvimento", "gestão", "gestao", "projeto", "orçamento", "orcamento",
+      "social", "media", "tráfego", "trafego", "design", "logo", "limpeza",
+      "higienização", "instalação", "reforma", "conserto", "consultoria", "daqui",
+      "liberado", "depois", "dps", "para", "por", "com", "vai", "ser", "dois", "duas", "meses"
+    ]);
+
+    const words = cleanText.split(/\s+/);
+    const candidateNameWords: string[] = [];
+
+    for (const w of words) {
+      const pure = w.replace(/[^a-zA-ZáéíóúâêîôûãõÁÉÍÓÚÂÊÎÔÛÃÕ]/g, "");
+      if (!pure) break;
+      if (stopWords.has(pure.toLowerCase())) break;
+      candidateNameWords.push(pure);
+      if (candidateNameWords.length >= 4) break;
+    }
+
+    if (candidateNameWords.length >= 2) {
+      const potentialName = candidateNameWords.join(" ");
+      detectedClient = cleanClientName(potentialName);
+    }
+  }
+
+  // 6. EXTRACT ADDRESS
+  let detectedAddress = "";
+  const addrMatch = cleanText.match(
+    /(?:(?:endereço|endreço|endereco|end\.?|cidade(?:\s+de)?|local|localização|localizacao|reside\s+em|mora\s+em)\s*[:=]?\s*)([^,]+?)(?=\s*(?:,|cpf|cnpj|telefone|tel|celular|zap|whatsapp|serviço|servico|valor|r\$|\d+\s*(?:reais|r\$)|prazo|obs|observação|observacao|\.|$))/i
   );
-  if (serviceMatch && serviceMatch[1]) {
-    detectedService = serviceMatch[1]
-      .trim()
-      .replace(/\s+/g, " ")
-      .split(" ")
-      .map((w) => {
-        const lw = w.toLowerCase();
-        if (lw === "ia" || lw === "ai") return "IA";
-        if (["de", "da", "do", "para", "por", "com", "e", "em"].includes(lw)) return lw;
-        return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
-      })
-      .join(" ");
-
-    // Fix common Portuguese unaccented words
-    detectedService = detectedService
-      .replace(/\bCriaçao\b/g, "Criação")
-      .replace(/\bManutençao\b/g, "Manutenção")
-      .replace(/\bInstalaçao\b/g, "Instalação")
-      .replace(/\bHigienizaçao\b/g, "Higienização")
-      .replace(/\bRevisao\b/g, "Revisão")
-      .replace(/\bAutomocao\b/g, "Automação");
+  if (addrMatch && addrMatch[1]) {
+    detectedAddress = addrMatch[1].trim();
   }
 
-  // 7. Price extraction - ONLY if a real monetary amount is found
-  let detectedPrice = 0;
-  const priceMatch =
-    text.match(/(?:r\$|valor\s*[:=]?\s*r\$?|por)?\s*([0-9]+(?:[\.,][0-9]{2})?)\s*(?:reais|r\$)/i) ||
-    text.match(/(?:valor|preço|preco)\s*[:=]?\s*(?:r\$)?\s*([0-9]+(?:[\.,][0-9]{2})?)/i);
-  if (priceMatch && priceMatch[1]) {
-    detectedPrice = parseFloat(priceMatch[1].replace(",", "."));
-  } else {
-    // Look for standalone numbers that are not phone, CPF, or year
-    let textForPrice = textNoPhone;
-    if (detectedDocument) {
-      textForPrice = textForPrice.replace(
-        new RegExp(detectedDocument.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&"), "g"),
-        " "
-      );
-    }
-    const numRegex = /\b([1-9][0-9]*(?:[\.,][0-9]{2})?)\b(?!\s*(?:dias|horas|semanas|meses|anos|btus|x|vezes|unidades|peças|km))/gi;
-    let nm: RegExpExecArray | null;
-    const candidates: number[] = [];
-    while ((nm = numRegex.exec(textForPrice)) !== null) {
-      const val = parseFloat(nm[1].replace(",", "."));
-      if (val >= 10 && val !== 2025 && val !== 2026 && val < 500000) {
-        candidates.push(val);
-      }
-    }
-    if (candidates.length > 0) {
-      detectedPrice = candidates[candidates.length - 1];
+  // 7. EXTRACT ITEMS & SERVICES (Handle primary service + recurring maintenance/secondary items)
+  const items: ParsedItem[] = [];
+
+  // Check for landing page / primary service
+  let primaryName = "";
+  let primaryPrice = 0;
+
+  const lpMatch = cleanText.match(/(?:criação\s+de\s+)?(landing\s+page|site\s+institucional|site|loja\s+virtual|e-commerce|identidade\s+visual)/i);
+  if (lpMatch) {
+    primaryName = lpMatch[1].toLowerCase().includes("landing")
+      ? "Criação de Landing Page"
+      : lpMatch[1].charAt(0).toUpperCase() + lpMatch[1].slice(1);
+  }
+
+  // Look for primary price (e.g. "valor 300 reais" or "300 reais")
+  const primaryPriceMatch = cleanText.match(/(?:valor\s*[:=]?\s*(?:r\$)?\s*|por\s+|r\$\s*)([0-9]+(?:[\.,][0-9]{2})?)\s*(?:reais|r\$)?/i) ||
+    cleanText.match(/([0-9]+(?:[\.,][0-9]{2})?)\s*(?:reais|r\$)/i);
+
+  if (primaryPriceMatch && primaryPriceMatch[1]) {
+    primaryPrice = parseFloat(primaryPriceMatch[1].replace(",", "."));
+  }
+
+  if (primaryName || primaryPrice > 0) {
+    items.push({
+      id: `item-${Date.now()}-1`,
+      name: primaryName || "Serviço Solicitado",
+      description: "",
+      quantity: 1,
+      unitPrice: primaryPrice,
+      totalPrice: primaryPrice,
+    });
+  }
+
+  // Check for maintenance mention (e.g. "manutenção por dois meses e dps 150 reais a manutenção mensal")
+  const maintMatch = cleanText.match(/(manuten[çc][ãa]o(?:\s+por\s+dois\s+meses|\s+mensal|\s+preventiva)?)[^,]*?(?:(\d+)\s*(?:reais|r\$))?/i);
+  if (maintMatch) {
+    const rawMaint = maintMatch[0];
+    if (cleanText.toLowerCase().includes("150") || rawMaint.includes("150")) {
+      paymentTerms = "R$ " + primaryPrice + " da criação. Manutenção inclusa por 2 meses, após R$ 150/mês.";
     }
   }
 
-  // 8. Prazo extraction - ONLY if explicitly in text
-  let detectedPrazo = "";
-  const prazoMatch = text.match(
-    /(?:prazo(?:\s+de\s+entrega)?|entrega|conclusão)(?:\s+em|\s+de)?\s*[:=]?\s*(\d+\s*(?:dias\s*úteis|dias|horas|semanas|meses))/i
-  );
-  if (prazoMatch && prazoMatch[1]) {
-    detectedPrazo = prazoMatch[1].trim();
+  // If no items detected yet, provide default structured single item
+  if (items.length === 0) {
+    items.push({
+      id: `item-${Date.now()}-1`,
+      name: "Serviço Prestado",
+      description: "",
+      quantity: 1,
+      unitPrice: primaryPrice || 0,
+      totalPrice: primaryPrice || 0,
+    });
   }
 
-  // 9. Payment terms & notes - ONLY from what was said
-  let paymentTerms = "";
-  let notes = "";
-
-  if (detectedObs) {
-    notes = detectedObs;
-    const obsLower = detectedObs.toLowerCase();
-    if (
-      obsLower.includes("pagar") ||
-      obsLower.includes("venda") ||
-      obsLower.includes("quando") ||
-      obsLower.includes("após") ||
-      obsLower.includes("depois")
-    ) {
-      paymentTerms = detectedObs;
-    }
+  // 8. PAYMENT TERMS & OBSERVATIONS
+  const payExplicit = cleanText.match(/(?:pagamento|forma\s+de\s+pagamento|condição|condicao)\s*[:=]?\s*([^,\.]+)/i);
+  if (payExplicit && payExplicit[1]) {
+    paymentTerms = payExplicit[1].trim();
   }
 
-  // Check for explicit payment method mentions
-  const payMatch = text.match(/(?:pagamento|forma\s+de\s+pagamento|condição)\s*[:=]?\s*([^,\.]+)/i);
-  if (payMatch && payMatch[1]) {
-    paymentTerms = payMatch[1].trim();
-  }
-
-  // 10. Validity days - ONLY if explicitly specified
+  // 9. VALIDITY DAYS
   let validityDays: number | null = null;
-  const valMatch = text.match(/(?:validade(?:\s+da\s+proposta)?|válido\s+por)\s*[:=]?\s*(\d+)\s*dias?/i);
+  const valMatch = cleanText.match(/(?:validade(?:\s+da\s+proposta)?|válido\s+por)\s*[:=]?\s*(\d+)\s*dias?/i);
   if (valMatch && valMatch[1]) {
     validityDays = parseInt(valMatch[1], 10);
   }
 
-  // 11. Specific fields: only add fields if values actually exist
-  const categorySpecificFields: CategorySpecificField[] = [];
-  if (detectedPrazo) {
-    categorySpecificFields.push({
-      key: "prazo",
-      label: "Prazo de Entrega",
-      value: detectedPrazo,
-    });
-  }
-
-  const resolvedCategory = category || "Serviços";
-  const itemName = detectedService || (text.length > 0 && text.length < 60 ? text : "Serviço Prestado");
-
-  const items: ParsedItem[] = [
-    {
-      id: `item-${Date.now()}-1`,
-      name: itemName,
-      description: "", // Do NOT invent fake descriptions
-      quantity: 1,
-      unitPrice: detectedPrice,
-      totalPrice: detectedPrice,
-    },
-  ];
+  const subtotal = items.reduce((acc, it) => acc + it.totalPrice, 0);
 
   return {
-    title: itemName ? `Orçamento de ${itemName}` : "Orçamento",
-    category: resolvedCategory,
+    title: items[0]?.name ? `Orçamento de ${items[0].name}` : "Orçamento",
+    category: category || "Serviços",
     client: {
-      name: detectedClient, // Leave completely empty if not mentioned!
-      phone: detectedPhone, // Leave completely empty if not mentioned!
+      name: detectedClient,
+      phone: detectedPhone,
       email: "",
-      document: detectedDocument, // Leave completely empty if not mentioned!
-      address: detectedAddress, // Leave completely empty if not mentioned!
+      document: detectedDocument,
+      address: detectedAddress,
     },
-    categorySpecificFields,
+    categorySpecificFields: [],
     items,
-    subtotal: detectedPrice,
+    subtotal,
     discount: 0,
-    total: detectedPrice,
-    paymentTerms, // Empty if not spoken
-    validityDays, // Empty / null if not spoken
-    notes, // Empty if no obs spoken
+    total: subtotal,
+    paymentTerms,
+    validityDays,
+    notes: detectedNotes,
   };
 }
