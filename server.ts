@@ -6,6 +6,7 @@ import dotenv from "dotenv";
 import {
   smartParseBudget,
 } from "./src/lib/budget-parser";
+import { parseBudgetWithGemini } from "./src/lib/gemini-budget-parser";
 
 dotenv.config();
 
@@ -37,18 +38,35 @@ async function startServer() {
     }
   });
 
-  // Organize the budget with the deterministic extraction engine. Keeping this
-  // endpoint independent from an external model prevents unavailable services or
-  // malformed model output from corrupting explicit customer and pricing data.
-  app.post(["/api/gemini/organize-budget", "/api/organize-budget"], (req, res) => {
+  // Organize the budget. Tries Gemini first (much better at free-form
+  // dictated text); if there's no API key configured or the call fails for
+  // any reason, falls back to the deterministic regex engine so this route
+  // never breaks the user's flow.
+  app.post(["/api/gemini/organize-budget", "/api/organize-budget"], async (req, res) => {
     const { text, category, companyName, clientName } = req.body ?? {};
     if (!text || typeof text !== "string" || !text.trim()) {
       res.status(400).json({ error: "Texto ou áudio para o orçamento é obrigatório" });
       return;
     }
 
-    const budget = smartParseBudget(text, category, clientName, companyName);
-    res.json({ budget, source: "bl-ai-smart-engine" });
+    const apiKey = process.env.GEMINI_API_KEY;
+    let budget;
+    let source = "bl-ai-smart-engine";
+
+    if (apiKey) {
+      try {
+        budget = await parseBudgetWithGemini(text, category, clientName, companyName, apiKey);
+        source = "gemini";
+      } catch (aiError) {
+        console.error("Gemini parse failed, falling back to regex engine:", aiError);
+      }
+    }
+
+    if (!budget) {
+      budget = smartParseBudget(text, category, clientName, companyName);
+    }
+
+    res.json({ budget, source });
   });
 
   // Vite middleware for development
