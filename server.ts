@@ -33,7 +33,7 @@ async function startServer() {
       // Pre-compute high-intelligence deterministic parse immediately
       const instantParsed = smartParseBudget(text, category, clientName, companyName);
 
-      const apiKey = process.env.GEMINI_API_KEY || "AQ.Ab8RN6I694aSrVyB6l5glBLPIeA6_7jcAOQ7cI_WNnaoHydk1A";
+      const apiKey = process.env.GEMINI_API_KEY || "";
 
       let enrichedBudget = instantParsed;
       try {
