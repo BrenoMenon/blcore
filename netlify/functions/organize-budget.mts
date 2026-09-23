@@ -1,4 +1,5 @@
 import { smartParseBudget } from "../../src/lib/budget-parser";
+import { parseBudgetWithGemini } from "../../src/lib/gemini-budget-parser";
 
 export default async (req: Request) => {
   if (req.method !== "POST") {
@@ -13,9 +14,26 @@ export default async (req: Request) => {
     const text = body.text || "";
     const category = body.category;
     const companyName = body.companyName;
+    const clientName = body.clientName;
 
-    const budget = smartParseBudget(text, category, undefined, companyName);
-    return new Response(JSON.stringify({ budget, source: "netlify-engine" }), {
+    const apiKey = process.env.GEMINI_API_KEY;
+    let budget;
+    let source = "bl-ai-smart-engine";
+
+    if (apiKey) {
+      try {
+        budget = await parseBudgetWithGemini(text, category, clientName, companyName, apiKey);
+        source = "gemini";
+      } catch (aiError) {
+        console.error("Gemini parse failed, falling back to regex engine:", aiError);
+      }
+    }
+
+    if (!budget) {
+      budget = smartParseBudget(text, category, clientName, companyName);
+    }
+
+    return new Response(JSON.stringify({ budget, source }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
