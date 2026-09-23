@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { QuoteData, CompanyBranding } from "@/types/quotes";
+import { smartParseBudget } from "@/lib/budget-parser";
 
 interface QuoteInputSectionProps {
   companyCategory: string;
@@ -63,23 +64,37 @@ export function QuoteInputSection({
     const toastId = toast.loading("Organizando orçamento com IA...");
 
     try {
-      const res = await fetch("/api/gemini/organize-budget", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: rawInput,
-          category: companyCategory,
-          companyName,
-        }),
-      });
+      let budget: any = null;
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || `Erro ${res.status}: falha ao processar orçamento`);
+      // 1. Attempt server-side Gemini route if running full-stack
+      try {
+        const res = await fetch("/api/gemini/organize-budget", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: rawInput,
+            category: companyCategory,
+            companyName,
+          }),
+        });
+
+        if (res.ok) {
+          const contentType = res.headers.get("content-type") || "";
+          if (contentType.includes("application/json")) {
+            const data = await res.json();
+            if (data?.budget) {
+              budget = data.budget;
+            }
+          }
+        }
+      } catch {
+        // Network error, offline, or static hosting (Netlify) -> fallback to client-side smart parser below
       }
 
-      const data = await res.json();
-      const budget = data.budget;
+      // 2. If API didn't return a budget (e.g. 404 on Netlify static host or API offline), use instant client-side AI parser
+      if (!budget) {
+        budget = smartParseBudget(rawInput, companyCategory, undefined, companyName);
+      }
 
       // Ensure full quote structure with unique ID and current date
       const quoteNumber = `ORC-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -252,24 +267,6 @@ export function QuoteInputSection({
               rows={6}
               className="w-full border-0 p-1 text-base font-normal leading-relaxed focus-visible:ring-0 focus-visible:ring-offset-0 bg-transparent resize-y placeholder:text-muted-foreground/60 shadow-none"
             />
-
-            {/* Sugestão de teste rápido */}
-            {!text && (
-              <div className="pt-2 border-t border-border/40 flex flex-wrap items-center gap-2">
-                <span className="text-[11px] text-muted-foreground">Exemplo para testar:</span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setText(
-                      "cliente breno menon telefone 19981564250, endreço santa rita do passa quatro centro cpf 41275798896, serviço criaçao de landing page personalizada por ia, 800 reais prazo 7 dias obs: ele so vai pagar quando fechar a venda do sitio dele"
-                    )
-                  }
-                  className="text-[11px] px-2.5 py-1 rounded-md bg-muted hover:bg-muted/80 text-foreground transition-colors cursor-pointer text-left line-clamp-1 border border-border"
-                >
-                  cliente breno menon telefone 19981564250, endreço santa rita...
-                </button>
-              </div>
-            )}
           </div>
 
           {/* Action Trigger */}

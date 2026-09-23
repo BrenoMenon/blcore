@@ -36,7 +36,7 @@ async function startServer() {
   });
 
   // Organize budget with Gemini AI
-  app.post("/api/gemini/organize-budget", async (req, res) => {
+  app.post(["/api/gemini/organize-budget", "/api/organize-budget"], async (req, res) => {
     try {
       const { text, category, companyName, clientName } = req.body;
       if (!text || typeof text !== "string" || !text.trim()) {
