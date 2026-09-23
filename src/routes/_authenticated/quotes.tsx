@@ -241,7 +241,7 @@ function QuotesPage() {
     setCurrentQuote(item);
     setCurrentStep("preview");
     setActiveTab("create");
-    toast.info(`Orçamento #${item.number} carregado.`);
+    toast.info(`Orçamento de ${item.client.name || "cliente"} carregado.`);
   }
 
   function handleStartNewQuote() {
@@ -401,9 +401,6 @@ function QuotesPage() {
                     <CardHeader className="pb-2">
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <Badge variant="outline" className="text-[10px] font-mono mb-1 bg-muted/60">
-                            #{item.number}
-                          </Badge>
                           <CardTitle className="text-sm font-bold text-foreground line-clamp-1">
                             {item.client.name}
                           </CardTitle>

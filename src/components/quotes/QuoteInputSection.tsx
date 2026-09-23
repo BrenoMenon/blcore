@@ -97,10 +97,9 @@ export function QuoteInputSection({
       }
 
       // Ensure full quote structure with unique ID and current date
-      const quoteNumber = `ORC-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
       const completeQuote: QuoteData = {
         id: `quote-${Date.now()}`,
-        number: quoteNumber,
+        number: "",
         createdAt: new Date().toISOString(),
         title: budget.title || "Orçamento de Serviços",
         category: budget.category || companyCategory || "Serviços Gerais",

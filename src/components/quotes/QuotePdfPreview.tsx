@@ -74,7 +74,7 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
   });
 
   const validityDateObj = new Date(quote.createdAt);
-  validityDateObj.setDate(validityDateObj.getDate() + (quote.validityDays || 15));
+  validityDateObj.setDate(validityDateObj.getDate() + (quote.validityDays ?? 0));
   const validityDate = validityDateObj.toLocaleDateString("pt-BR", {
     day: "2-digit",
     month: "2-digit",
@@ -645,9 +645,11 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
                     <p>
                       <span className="font-semibold text-slate-800">Emissão:</span> {emissionDate}
                     </p>
-                    <p>
-                      <span className="font-semibold text-slate-800">Validade:</span> {validityDate}
-                    </p>
+                    {quote.validityDays ? (
+                      <p>
+                        <span className="font-semibold text-slate-800">Validade:</span> {validityDate}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               </div>
