@@ -6,6 +6,7 @@ import {
   type CategorySpecificField,
   type ParsedBudget,
   type ParsedItem,
+  reconcileBudgetWithSource,
 } from "./budget-parser";
 
 /**
@@ -228,7 +229,7 @@ export async function parseBudgetWithGemini(
   const clientName = String(parsed.client?.name || clientNameSuggestion || "").trim();
   const serviceName = items[0]?.name || "Serviço Prestado";
 
-  return {
+  const normalizedBudget: ParsedBudget = {
     title: String(parsed.title || (serviceName === "Serviço Prestado" ? "Orçamento de Serviços" : `Orçamento de ${serviceName}`)),
     category: String(parsed.category || category || "Serviços"),
     client: {
@@ -259,4 +260,13 @@ export async function parseBudgetWithGemini(
     validityDays: typeof parsed.validityDays === "number" ? parsed.validityDays : null,
     notes: String(parsed.notes || "").trim(),
   };
+
+  // Never trust model interpretation over explicit facts from the source text.
+  return reconcileBudgetWithSource(
+    rawText,
+    normalizedBudget,
+    category,
+    clientNameSuggestion,
+    companyNameSuggestion,
+  );
 }
