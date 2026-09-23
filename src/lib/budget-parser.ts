@@ -109,30 +109,48 @@ export function formatCnpj(raw: string): string {
 
 function extractDocument(text: string): string {
   const labeled = text.match(/(?:cnpj)\s*(?:é|e|:|=)?\s*((?:\d[\s.-]*){14,18})/i);
+
   if (labeled?.[1]) {
     const formatted = formatCnpj(labeled[1]);
     if (formatted) return formatted;
   }
 
-  const labeledCpf = text.match(/(?:cpf|documento|doc)(?:\s+(?:dele|dela|do\s+cliente|da\s+cliente))?\s*(?:é|e|:|=)?\s*((?:\d[\s.-]*){11,14})/i);
+  const labeledCpf = text.match(
+    /(?:cpf|documento|doc)(?:\s+(?:dele|dela|do\s+cliente|da\s+cliente))?\s*(?:é|e|:|=)?\s*((?:\d[\s.-]*){11,14})/i
+  );
+
   if (labeledCpf?.[1]) {
     const formatted = formatCpf(labeledCpf[1]);
     if (formatted) return formatted;
   }
 
-  const cnpj = text.match(/\b(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})\b);
+  const cnpj = text.match(/\b(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})\b/);
+
   if (cnpj?.[1]) return formatCnpj(cnpj[1]);
 
-  const cpf = text.match(/\b(\d{3}\.\d{3}\.\d{3}-\d{2})\b);
+  const cpf = text.match(/\b(\d{3}\.\d{3}\.\d{3}-\d{2})\b/);
+
   return cpf?.[1] ? formatCpf(cpf[1]) : "";
 }
 
 function extractPhone(text: string, document: string): string {
-  const labeled = text.match(/(?:telefone|tel|celular|whats(?:app)?|zap|fone|contato)\s*(?:é|e|:|=)?\s*(?:\+?55\s*)?(\(?\d{2}\)?\s*9?\d{4}[-.\s]?\d{4})/i);
-  const formatted = text.match(/(?:^|\s|\()([1-9]{2})\)?\s*(9\d{4}|\d{4})[-.\s](\d{4})(?=\s|$)/i);
-  const candidate = labeled?.[1] ?? (formatted ? `${formatted[1]}${formatted[2]}${formatted[3]}` : "");
+  const labeled = text.match(
+    /(?:telefone|tel|celular|whats(?:app)?|zap|fone|contato)\s*(?:é|e|:|=)?\s*(?:\+?55\s*)?(\(?\d{2}\)?\s*9?\d{4}[-.\s]?\d{4})/i
+  );
+
+  const formatted = text.match(
+    /(?:^|\s|\()([1-9]{2})\)?\s*(9\d{4}|\d{4})[-.\s](\d{4})(?=\s|$)/i
+  );
+
+  const candidate =
+    labeled?.[1] ??
+    (formatted ? `${formatted[1]}${formatted[2]}${formatted[3]}` : "");
+
   const digits = candidate.replace(/\D/g, "");
-  return digits && digits !== document.replace(/\D/g, "") ? formatPhone(digits) : "";
+
+  return digits && digits !== document.replace(/\D/g, "")
+    ? formatPhone(digits)
+    : "";
 }
 
 function extractClient(text: string, suggestion?: string): string {
@@ -143,12 +161,14 @@ function extractClient(text: string, suggestion?: string): string {
 
   const patterns = [
     /(?:é\s+o\s+cliente|cliente|nome\s+do\s+cliente|em\s+nome\s+de)\s*(?:é|e|:|=)?\s*([\p{L}][\p{L}'-]*(?:\s+(?:de|da|do|dos|das|e|[\p{L}][\p{L}'-]*)){0,4})(?=\s*(?:\(|,|;|\.|cpf|cnpj|telefone|tel|celular|whats(?:app)?|valor|pagamento|prazo|mora|reside|e-mail|email|$))/iu,
+
     /(?:para\s+(?:o|a))\s+([\p{L}][\p{L}'-]*(?:\s+[\p{L}][\p{L}'-]*){0,3})(?=\s*(?:\(|,|;|\.|cpf|cnpj|telefone|valor|pagamento|prazo|pendente|$))/iu,
   ];
 
   for (const pattern of patterns) {
     const match = text.match(pattern);
     const name = cleanClientName(match?.[1] ?? "");
+
     if (name) return name;
   }
 
@@ -156,70 +176,125 @@ function extractClient(text: string, suggestion?: string): string {
 }
 
 function extractAddress(text: string): string {
-  const match = text.match(/(?:endereço|endereco|cidade|localização|localizacao|reside\s+em|mora\s+em)\s*(?:é|e|:|=)?\s*(.+?)(?=\s+(?:é\s+o\s+orçamento|e\s+o\s+orçamento|é\s+orçamento|e\s+orçamento|orçamento\s+de|or[cç]amento\s+de|cria[cç][aã]o\s+de|desenvolvimento\s+de|produ[cç][aã]o\s+de|valor\s+total|total\s+(?:de|r\$)|pagamento|forma\s+de\s+pagamento|prazo\b|proposta\s+v[aá]lida|pendente|observa[cç][aã]o|obs\b|$))/i);
+  const match = text.match(
+    /(?:endereço|endereco|cidade|localização|localizacao|reside\s+em|mora\s+em)\s*(?:é|e|:|=)?\s*(.+?)(?=\s+(?:é\s+o\s+orçamento|e\s+o\s+orçamento|é\s+orçamento|e\s+orçamento|orçamento\s+de|or[cç]amento\s+de|cria[cç][aã]o\s+de|desenvolvimento\s+de|produ[cç][aã]o\s+de|valor\s+total|total\s+(?:de|r\$)|pagamento|forma\s+de\s+pagamento|prazo\b|proposta\s+v[aá]lida|pendente|observa[cç][aã]o|obs\b|$))/i
+  );
 
   if (!match?.[1]) return "";
 
   return sentenceCase(match[1].replace(/[.,;]+$/, ""));
 }
 
-function extractService(text: string): { name: string; description: string } {
+function extractService(text: string): {
+  name: string;
+  description: string;
+} {
   const normalized = normalizeText(text);
 
-  const explicit = normalized.match(/(?:é\s+o\s+orçamento|e\s+o\s+orçamento|é\s+orçamento|e\s+orçamento|orçamento)\s+(?:de\s+)?(.+?)(?=\s+valor\s+total|\s+total\s+(?:de|r\$)|\s+valor\b|\s+forma\s+de\s+pagamento|\s+pagamento\b|\s+prazo\b|\s+proposta\s+v[aá]lida|\s+pendente\b|\s+observa[cç][aã]o\b|$)/i);
+  const explicit = normalized.match(
+    /(?:é\s+o\s+orçamento|e\s+o\s+orçamento|é\s+orçamento|e\s+orçamento|orçamento)\s+(?:de\s+)?(.+?)(?=\s+valor\s+total|\s+total\s+(?:de|r\$)|\s+valor\b|\s+forma\s+de\s+pagamento|\s+pagamento\b|\s+prazo\b|\s+proposta\s+v[aá]lida|\s+pendente\b|\s+observa[cç][aã]o\b|$)/i
+  );
 
   const source =
     explicit?.[1] ||
-    normalized.match(/((?:cria[cç][aã]o|desenvolvimento|produ[cç][aã]o|instala[cç][aã]o|manuten[cç][aã]o|reforma|consultoria|gest[aã]o|design|servi[cç]o)\s+de\s+.+?)(?=\s+valor\s+total|\s+valor\b|\s+forma\s+de\s+pagamento|\s+pagamento\b|\s+prazo\b|\s+proposta\s+v[aá]lida|\s+pendente\b|$)/i)?.[1] ||
-    normalized.match(/(?:landing\s+page|site\s+institucional|loja\s+virtual|e-commerce|identidade\s+visual|social\s+media|tr[aá]fego\s+pago)/i)?.[0] ||
+    normalized.match(
+      /((?:cria[cç][aã]o|desenvolvimento|produ[cç][aã]o|instala[cç][aã]o|manuten[cç][aã]o|reforma|consultoria|gest[aã]o|design|servi[cç]o)\s+de\s+.+?)(?=\s+valor\s+total|\s+valor\b|\s+forma\s+de\s+pagamento|\s+pagamento\b|\s+prazo\b|\s+proposta\s+v[aá]lida|\s+pendente\b|$)/i
+    )?.[1] ||
+    normalized.match(
+      /(?:landing\s+page|site\s+institucional|loja\s+virtual|e-commerce|identidade\s+visual|social\s+media|tr[aá]fego\s+pago)/i
+    )?.[0] ||
     "";
 
-  if (!source) return { name: "Serviço Prestado", description: "" };
+  if (!source) {
+    return {
+      name: "Serviço Prestado",
+      description: "",
+    };
+  }
 
   const clean = sentenceCase(source);
 
-  const descriptionMatch = clean.match(/^(cria[cç][aã]o\s+de\s+landing\s+page|desenvolvimento\s+de\s+landing\s+page|landing\s+page)(?:\s+com\s+(.+))?$/i);
+  const descriptionMatch = clean.match(
+    /^(cria[cç][aã]o\s+de\s+landing\s+page|desenvolvimento\s+de\s+landing\s+page|landing\s+page)(?:\s+com\s+(.+))?$/i
+  );
 
   if (descriptionMatch) {
     return {
       name: sentenceCase(descriptionMatch[1]),
-      description: descriptionMatch[2] ? sentenceCase(descriptionMatch[2]) : "",
+      description: descriptionMatch[2]
+        ? sentenceCase(descriptionMatch[2])
+        : "",
     };
   }
 
-  return { name: clean, description: "" };
+  return {
+    name: clean,
+    description: "",
+  };
 }
 
 function extractTotal(text: string): number {
   const prioritized = [
-    new RegExp(`valor\\s+total\\s+(?:é|e|de|:|=)?\\s*${MONEY_TOKEN}`, "i"),
-    new RegExp(`total\\s+(?:é|e|de|:|=)?\\s*${MONEY_TOKEN}`, "i"),
-    new RegExp(`(?:valor|por)\\s*(?:é|e|:|=)?\\s*${MONEY_TOKEN}`, "i"),
-    new RegExp(`\\br\\$\\s*([\\d.]+(?:,\\d{1,2})?)`, "i"),
+    new RegExp(
+      `valor\\s+total\\s+(?:é|e|de|:|=)?\\s*${MONEY_TOKEN}`,
+      "i"
+    ),
+
+    new RegExp(
+      `total\\s+(?:é|e|de|:|=)?\\s*${MONEY_TOKEN}`,
+      "i"
+    ),
+
+    new RegExp(
+      `(?:valor|por)\\s*(?:é|e|:|=)?\\s*${MONEY_TOKEN}`,
+      "i"
+    ),
+
+    new RegExp(
+      `\\br\\$\\s*([\\d.]+(?:,\\d{1,2})?)`,
+      "i"
+    ),
   ];
 
   for (const pattern of prioritized) {
     const match = text.match(pattern);
-    if (match?.[1]) return parseBrazilianMoney(match[1]);
+
+    if (match?.[1]) {
+      return parseBrazilianMoney(match[1]);
+    }
   }
 
-  const reais = text.match(/(?:valor\s+total|total|valor|por)\s*(?:é|e|de|:|=)?\s*([\d.]+(?:,\d{1,2})?)\s*reais\b/i);
+  const reais = text.match(
+    /(?:valor\s+total|total|valor|por)\s*(?:é|e|de|:|=)?\s*([\d.]+(?:,\d{1,2})?)\s*reais\b/i
+  );
 
-  if (reais?.[1]) return parseBrazilianMoney(reais[1]);
+  if (reais?.[1]) {
+    return parseBrazilianMoney(reais[1]);
+  }
 
   return 0;
 }
 
 function extractPayment(text: string): string {
-  const payment = text.match(/(?:pagamento|forma\s+de\s+pagamento|condi[cç][aã]o(?:\s+de\s+pagamento)?)\s*(?:é|e|:|=)?\s*(.+?)(?=\s+(?:prazo\b|proposta\s+v[aá]lida|pendente\b|observa[cç][aã]o\b|obs\b)|\s*[.;]|$)/i);
+  const payment = text.match(
+    /(?:pagamento|forma\s+de\s+pagamento|condi[cç][aã]o(?:\s+de\s+pagamento)?)\s*(?:é|e|:|=)?\s*(.+?)(?=\s+(?:prazo\b|proposta\s+v[aá]lida|pendente\b|observa[cç][aã]o\b|obs\b)|\s*[.;]|$)/i
+  );
 
-  if (payment?.[1]) return sentenceCase(payment[1]);
+  if (payment?.[1]) {
+    return sentenceCase(payment[1]);
+  }
 
-  const percentage = text.match(/\b\d{1,3}%\s+(?:agora|na\s+entrega|na\s+aprova[cç][aã]o|na\s+assinatura).+?(?=\s+(?:prazo\b|proposta\s+v[aá]lida|pendente\b)|\s*[.;]|$)/i);
+  const percentage = text.match(
+    /\b\d{1,3}%\s+(?:agora|na\s+entrega|na\s+aprova[cç][aã]o|na\s+assinatura).+?(?=\s+(?:prazo\b|proposta\s+v[aá]lida|pendente\b)|\s*[.;]|$)/i
+  );
 
-  if (percentage?.[0]) return sentenceCase(percentage[0]);
+  if (percentage?.[0]) {
+    return sentenceCase(percentage[0]);
+  }
 
-  const methods = text.match(/(?:pix|boleto|cart[aã]o|dinheiro)(?:\s*(?:,|ou|e)\s*(?:pix|boleto|cart[aã]o|dinheiro))+/i);
+  const methods = text.match(
+    /(?:pix|boleto|cart[aã]o|dinheiro)(?:\s*(?:,|ou|e)\s*(?:pix|boleto|cart[aã]o|dinheiro))+/i
+  );
 
   return methods?.[0] ? sentenceCase(methods[0]) : "";
 }
@@ -227,12 +302,16 @@ function extractPayment(text: string): string {
 function extractDeadline(text: string): string {
   const patterns = [
     /prazo\s+de\s+entrega\s*(?:é|e|:|=)?\s*(?:de|para)?\s*(.+?)(?=\s+(?:proposta\s+v[aá]lida|validade\s+da\s+proposta|pendente\b|observa[cç][aã]o\b|obs\b)|\s*[.;]|$)/i,
+
     /(?:prazo|entrega|conclus[aã]o)\s*(?:é|e|:|=)?\s*(?:de|para)?\s*(.+?)(?=\s+(?:proposta\s+v[aá]lida|validade\s+da\s+proposta|pendente\b|observa[cç][aã]o\b|obs\b)|\s*[.;]|$)/i,
   ];
 
   for (const pattern of patterns) {
     const match = text.match(pattern);
-    if (match?.[1]) return sentenceCase(match[1]);
+
+    if (match?.[1]) {
+      return sentenceCase(match[1]);
+    }
   }
 
   return "";
@@ -240,8 +319,12 @@ function extractDeadline(text: string): string {
 
 function extractValidityDays(text: string): number | null {
   const match =
-    text.match(/(?:proposta|orçamento|orcamento)\s+(?:é\s+)?v[aá]lid[ao]\s+(?:por\s+)?(\d+)\s*dias?/i) ??
-    text.match(/validade\s+(?:da\s+proposta|do\s+orçamento|do\s+orcamento)\s*(?:é|de|:)?\s*(\d+)\s*dias?/i);
+    text.match(
+      /(?:proposta|orçamento|orcamento)\s+(?:é\s+)?v[aá]lid[ao]\s+(?:por\s+)?(\d+)\s*dias?/i
+    ) ??
+    text.match(
+      /validade\s+(?:da\s+proposta|do\s+orçamento|do\s+orcamento)\s*(?:é|de|:)?\s*(\d+)\s*dias?/i
+    );
 
   return match?.[1] ? Number(match[1]) : null;
 }
@@ -249,46 +332,55 @@ function extractValidityDays(text: string): number | null {
 function extractNotes(text: string): string {
   const notes: string[] = [];
 
-  const pending = text.match(/(?:pendente(?:s)?(?:\s+(?:de|que|ele|ela|o|a))?|faltando|aguardando)\s+(.+?)(?=\s*(?:;|\.|$))/i);
+  const pending = text.match(
+    /(?:pendente(?:s)?(?:\s+(?:de|que|ele|ela|o|a))?|faltando|aguardando)\s+(.+?)(?=\s*(?:;|\.|$))/i
+  );
 
   if (pending?.[1]) {
     notes.push(`Pendente de ${pending[1].trim()}`);
   }
 
-  const observation = text.match(/(?:obs(?:erva[cç][aã]o|erva[cç][oõ]es)?|nota|aviso)\s*[:=]?\s*(.+?)(?=\s*(?:;|\.|$))/i);
+  const observation = text.match(
+    /(?:obs(?:erva[cç][aã]o|erva[cç][oõ]es)?|nota|aviso)\s*[:=]?\s*(.+?)(?=\s*(?:;|\.|$))/i
+  );
 
   if (observation?.[1]) {
     notes.push(observation[1].trim());
   }
 
-  return notes.map(sentenceCase).filter(Boolean).join(". ");
+  return notes
+    .map(sentenceCase)
+    .filter(Boolean)
+    .join(". ");
 }
 
 function extractEmail(text: string): string {
-  return text.match(/\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b/)?.[0] ?? "";
+  return (
+    text.match(/\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b/)?.[0] ?? ""
+  );
 }
 
 function extractItemDescription(text: string): string {
   const details: string[] = [];
 
-  const includes = text.match(/\(([^)]*(?:m[aã]o\s+de\s+obra|design|taxa|material|desconto)[^)]*)\)/i);
+  const includes = text.match(
+    /\(([^)]*(?:m[aã]o\s+de\s+obra|design|taxa|material|desconto)[^)]*)\)/i
+  );
 
   if (includes?.[1]) {
     details.push(includes[1].trim());
   }
 
-  if (/desconto\s+inclu[ií]do/i.test(text) && !details.some((value) => /desconto\s+inclu[ií]do/i.test(value))) {
+  if (
+    /desconto\s+inclu[ií]do/i.test(text) &&
+    !details.some((value) => /desconto\s+inclu[ií]do/i.test(value))
+  ) {
     details.push("Desconto incluído");
   }
 
   return details.map(sentenceCase).join("; ");
 }
 
-/**
- * Deterministic extraction used both as the offline fallback and as a safety
- * layer over Gemini. Explicit facts in the user's text always win over a
- * model's interpretation, which prevents fields from bleeding into each other.
- */
 export function smartParseBudget(
   rawText: string,
   category?: string,
@@ -296,6 +388,7 @@ export function smartParseBudget(
   _companyNameSuggestion?: string,
 ): ParsedBudget {
   const text = normalizeText(rawText);
+
   const document = extractDocument(text);
   const phone = extractPhone(text, document);
   const clientName = extractClient(text, clientNameSuggestion);
@@ -304,7 +397,8 @@ export function smartParseBudget(
   const deadline = extractDeadline(text);
   const validityDays = extractValidityDays(text);
   const notes = extractNotes(text);
-  const description = service.description || extractItemDescription(text);
+  const description =
+    service.description || extractItemDescription(text);
 
   const item: ParsedItem = {
     id: `item-${Date.now()}-1`,
@@ -316,8 +410,13 @@ export function smartParseBudget(
   };
 
   return {
-    title: service.name === "Serviço Prestado" ? "Orçamento de Serviços" : `Orçamento de ${service.name}`,
+    title:
+      service.name === "Serviço Prestado"
+        ? "Orçamento de Serviços"
+        : `Orçamento de ${service.name}`,
+
     category: category || "Serviços",
+
     client: {
       name: clientName,
       phone,
@@ -325,9 +424,17 @@ export function smartParseBudget(
       document,
       address: extractAddress(text),
     },
+
     categorySpecificFields: deadline
-      ? [{ key: "deadline", label: "Prazo", value: deadline }]
+      ? [
+          {
+            key: "deadline",
+            label: "Prazo",
+            value: deadline,
+          },
+        ]
       : [],
+
     items: [item],
     subtotal: total,
     discount: 0,
@@ -338,11 +445,6 @@ export function smartParseBudget(
   };
 }
 
-/**
- * Reconciles a Gemini result with facts explicitly present in the source text.
- * This is intentionally conservative: it only overwrites a field when the
- * deterministic parser has actually found an explicit value.
- */
 export function reconcileBudgetWithSource(
   rawText: string,
   budget: ParsedBudget,
@@ -364,11 +466,26 @@ export function reconcileBudgetWithSource(
 
   const client = {
     ...budget.client,
-    ...(has(explicit.client.name) ? { name: explicit.client.name } : {}),
-    ...(has(explicit.client.phone) ? { phone: explicit.client.phone } : {}),
-    ...(has(explicit.client.email) ? { email: explicit.client.email } : {}),
-    ...(has(explicit.client.document) ? { document: explicit.client.document } : {}),
-    ...(has(explicit.client.address) ? { address: explicit.client.address } : {}),
+
+    ...(has(explicit.client.name)
+      ? { name: explicit.client.name }
+      : {}),
+
+    ...(has(explicit.client.phone)
+      ? { phone: explicit.client.phone }
+      : {}),
+
+    ...(has(explicit.client.email)
+      ? { email: explicit.client.email }
+      : {}),
+
+    ...(has(explicit.client.document)
+      ? { document: explicit.client.document }
+      : {}),
+
+    ...(has(explicit.client.address)
+      ? { address: explicit.client.address }
+      : {}),
   };
 
   const explicitItem = explicit.items[0];
@@ -389,31 +506,61 @@ export function reconcileBudgetWithSource(
         ]
       : budget.items;
 
-  const subtotal = explicit.total > 0 ? explicit.total : budget.subtotal;
-  const total = explicit.total > 0 ? explicit.total : budget.total;
+  const subtotal =
+    explicit.total > 0
+      ? explicit.total
+      : budget.subtotal;
+
+  const total =
+    explicit.total > 0
+      ? explicit.total
+      : budget.total;
 
   return {
     ...budget,
+
     title:
       explicit.title !== "Orçamento de Serviços"
         ? explicit.title
         : budget.title,
-    category: budget.category || category || explicit.category,
+
+    category:
+      budget.category ||
+      category ||
+      explicit.category,
+
     client,
-    items: items?.length ? items : [explicitItem],
+
+    items: items?.length
+      ? items
+      : [explicitItem],
+
     subtotal,
     total,
-    discount: explicit.total > 0 ? 0 : budget.discount,
-    paymentTerms: has(explicit.paymentTerms)
-      ? explicit.paymentTerms
-      : budget.paymentTerms,
+
+    discount:
+      explicit.total > 0
+        ? 0
+        : budget.discount,
+
+    paymentTerms:
+      has(explicit.paymentTerms)
+        ? explicit.paymentTerms
+        : budget.paymentTerms,
+
     validityDays:
       explicit.validityDays !== null
         ? explicit.validityDays
         : budget.validityDays ?? null,
-    categorySpecificFields: explicit.categorySpecificFields.length
-      ? explicit.categorySpecificFields
-      : budget.categorySpecificFields,
-    notes: has(explicit.notes) ? explicit.notes : budget.notes,
+
+    categorySpecificFields:
+      explicit.categorySpecificFields.length
+        ? explicit.categorySpecificFields
+        : budget.categorySpecificFields,
+
+    notes:
+      has(explicit.notes)
+        ? explicit.notes
+        : budget.notes,
   };
 }
