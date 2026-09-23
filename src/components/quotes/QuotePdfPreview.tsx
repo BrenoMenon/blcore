@@ -84,7 +84,7 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
   const primaryColor = quote.branding.primaryColor || "#10b981";
   const secondaryColor = quote.branding.secondaryColor || "#065f46";
 
-  // Pre-process remote images to prevent CORS canvas taint
+  // Convert the logo to a data URL so html2canvas never taints the canvas
   async function prepareImagesForCanvas() {
     if (!quote.branding.logoUrl) return;
     if (quote.branding.logoUrl.startsWith("data:")) return;
@@ -92,20 +92,58 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
     try {
       const response = await fetch(quote.branding.logoUrl, { mode: "cors" });
       const blob = await response.blob();
-      const reader = new FileReader();
-      await new Promise((resolve) => {
-        reader.onloadend = () => {
-          if (reader.result && pdfRef.current) {
-            const imgEl = pdfRef.current.querySelector<HTMLImageElement>("#quote-logo-img");
-            if (imgEl) imgEl.src = reader.result as string;
-          }
-          resolve(true);
-        };
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
         reader.readAsDataURL(blob);
       });
+      const imgEl = pdfRef.current?.querySelector<HTMLImageElement>("#quote-logo-img");
+      if (imgEl && dataUrl) {
+        imgEl.removeAttribute("crossorigin");
+        imgEl.src = dataUrl;
+      }
     } catch {
-      // ignore
+      // ignore - falls back to the original URL
     }
+  }
+
+  // Force every image inside the render clone to a safe, bounded size and make
+  // sure it is fully decoded before html2canvas measures the layout.
+  async function normalizeCloneImages(root: HTMLElement) {
+    const images = Array.from(root.querySelectorAll("img"));
+
+    images.forEach((img) => {
+      const isLogo = img.id === "quote-logo-img";
+      img.style.maxHeight = isLogo ? "80px" : "80px";
+      img.style.maxWidth = isLogo ? "220px" : "220px";
+      img.style.height = "auto";
+      img.style.width = "auto";
+      img.style.objectFit = "contain";
+      img.style.display = "block";
+      img.removeAttribute("width");
+      img.removeAttribute("height");
+    });
+
+    await Promise.all(
+      images.map(
+        (img) =>
+          new Promise<void>((resolve) => {
+            if (img.complete && img.naturalWidth > 0) {
+              resolve();
+              return;
+            }
+            const done = () => resolve();
+            img.addEventListener("load", done, { once: true });
+            img.addEventListener("error", done, { once: true });
+            // Never block the export for more than 4s
+            setTimeout(done, 4000);
+          }),
+      ),
+    );
+
+    // Give the browser one frame to apply the layout with the loaded images
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(true)));
   }
 
   // Core PDF generator returning jsPDF object
@@ -125,8 +163,10 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
     clone.style.transform = "none";
     clone.style.margin = "0";
     clone.style.position = "fixed";
-    clone.style.top = "-99999px";
-    clone.style.left = "-99999px";
+    clone.style.top = "0";
+    clone.style.left = "0";
+    clone.style.opacity = "0";
+    clone.style.pointerEvents = "none";
     clone.style.width = "794px";
     clone.style.minHeight = "1123px";
     clone.style.backgroundColor = "#ffffff";
@@ -141,6 +181,8 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
 
     let canvas: HTMLCanvasElement;
     try {
+      await normalizeCloneImages(clone);
+
       canvas = await html2canvas(clone, {
         scale: 2,
         useCORS: true,
@@ -150,13 +192,25 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
         scrollX: 0,
         scrollY: 0,
         width: 794,
+        height: clone.scrollHeight,
         windowWidth: 794,
+        windowHeight: clone.scrollHeight,
+        imageTimeout: 8000,
         onclone: (clonedDoc) => {
           const el = clonedDoc.getElementById("quote-pdf-render-clone");
           if (el) {
             el.style.transform = "none";
+            el.style.opacity = "1";
             el.style.backgroundColor = "#ffffff";
             el.style.color = "#0f172a";
+            el.querySelectorAll("img").forEach((img) => {
+              const image = img as HTMLImageElement;
+              image.style.maxHeight = "80px";
+              image.style.maxWidth = "220px";
+              image.style.width = "auto";
+              image.style.height = "auto";
+              image.style.objectFit = "contain";
+            });
           }
           // Ensure root does not leak dark theme variables
           clonedDoc.documentElement.classList.remove("dark");
@@ -170,17 +224,53 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
       }
     }
 
-    const imgData = canvas.toDataURL("image/png");
+    if (!canvas.width || !canvas.height) {
+      throw new Error("Não foi possível renderizar o orçamento.");
+    }
+
     const pdf = new jsPDF({
       orientation: "portrait",
       unit: "mm",
       format: "a4",
+      compress: true,
     });
 
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
 
-    pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+    // Slice the tall canvas into A4 pages so nothing is cropped or blown up
+    const pxPerMm = canvas.width / pageWidth;
+    const pageHeightPx = Math.floor(pageHeight * pxPerMm);
+    const totalPages = Math.max(1, Math.ceil(canvas.height / pageHeightPx));
+
+    for (let page = 0; page < totalPages; page++) {
+      const sliceTop = page * pageHeightPx;
+      const sliceHeight = Math.min(pageHeightPx, canvas.height - sliceTop);
+
+      const pageCanvas = document.createElement("canvas");
+      pageCanvas.width = canvas.width;
+      pageCanvas.height = sliceHeight;
+
+      const ctx = pageCanvas.getContext("2d");
+      if (!ctx) throw new Error("Não foi possível preparar o PDF.");
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+      ctx.drawImage(
+        canvas,
+        0,
+        sliceTop,
+        canvas.width,
+        sliceHeight,
+        0,
+        0,
+        canvas.width,
+        sliceHeight,
+      );
+
+      const imgData = pageCanvas.toDataURL("image/jpeg", 0.92);
+      if (page > 0) pdf.addPage();
+      pdf.addImage(imgData, "JPEG", 0, 0, pageWidth, sliceHeight / pxPerMm, undefined, "FAST");
+    }
 
     const safeClient = (quote.client.name || "Cliente").replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_]/g, "");
     const fileName = `Orcamento_${safeClient}.pdf`;
@@ -290,16 +380,16 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
       const pdfFile = new File([pdfBlob], fileName, { type: "application/pdf" });
 
       const clientName = quote.client.name || "Cliente";
-      const shareMessage = `Olá ${clientName}, aqui está o seu orçamento da ${quote.branding.companyName}!`;
 
       // 1. Native Web Share with file attachment (Mobile devices: opens WhatsApp contact list!)
       if (typeof navigator !== "undefined" && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
         toast.dismiss(toastId);
         try {
+          // iOS/WhatsApp drops the attachment when text is sent together,
+          // so the file is shared on its own.
           await navigator.share({
             files: [pdfFile],
-            title: `Orçamento - ${clientName}`,
-            text: shareMessage,
+            title: fileName,
           });
           onSaveToHistory(quote);
           toast.success("Orçamento compartilhado com sucesso!");
