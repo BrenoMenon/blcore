@@ -43,7 +43,7 @@ function sentenceCase(value: string): string {
   return clean.charAt(0).toUpperCase() + clean.slice(1);
 }
 
-function parseBrazilianMoney(raw: string): number {
+export function parseBrazilianMoney(raw: string): number {
   const normalized = raw.trim().replace(/\s/g, "");
   if (!normalized) return 0;
   if (normalized.includes(",")) {
