@@ -100,9 +100,21 @@ export function QuoteInputSection({
           Array.isArray(budget.categorySpecificFields) && budget.categorySpecificFields.length > 0
             ? budget.categorySpecificFields
             : [
-                { key: "plataforma", label: "Plataforma / Escopo", value: "Instagram & Redes Sociais" },
-                { key: "prazo", label: "Prazo de Entrega", value: "7 a 15 dias úteis" },
-                { key: "suporte", label: "Suporte Técnico", value: "30 dias de suporte pós-lançamento" },
+                {
+                  key: "plataforma",
+                  label: "Plataforma / Escopo",
+                  value: budget.items?.[0]?.name || "Projeto Personalizado",
+                },
+                {
+                  key: "prazo",
+                  label: "Prazo de Entrega",
+                  value: "7 dias",
+                },
+                {
+                  key: "suporte",
+                  label: "Garantia / Suporte",
+                  value: "30 dias de suporte pós-lançamento",
+                },
               ],
         items:
           Array.isArray(budget.items) && budget.items.length > 0
@@ -110,24 +122,24 @@ export function QuoteInputSection({
             : [
                 {
                   id: `item-${Date.now()}-1`,
-                  name: "Gestão de Mídias Sociais & Conteúdo",
-                  description: "Planejamento, design de layout e publicação",
+                  name: budget.title?.replace(/^Orçamento de\s+/i, "") || "Criação de Landing Page Personalizada por IA",
+                  description: "Desenvolvimento profissional completo e responsivo com IA.",
                   quantity: 1,
-                  unitPrice: 300,
-                  totalPrice: 300,
+                  unitPrice: budget.subtotal || 800,
+                  totalPrice: budget.subtotal || 800,
                 },
               ],
-        subtotal: budget.subtotal || 300,
+        subtotal: budget.subtotal || 800,
         discount: budget.discount || 0,
-        total: budget.total || budget.subtotal || 300,
-        paymentTerms: budget.paymentTerms || "PIX à vista ou Cartão de Crédito",
+        total: budget.total || budget.subtotal || 800,
+        paymentTerms: budget.paymentTerms || "A combinar com o cliente",
         validityDays: budget.validityDays || 15,
         notes:
           budget.notes || "Validade da proposta de 15 dias corridos. Início dos serviços mediante aprovação.",
         branding: {
           ...branding,
           companyName: companyName || branding.companyName || "Minha Empresa",
-          category: companyCategory || branding.category,
+          category: budget.category || companyCategory || branding.category,
         },
       };
 
@@ -240,13 +252,31 @@ export function QuoteInputSection({
               rows={6}
               className="w-full border-0 p-1 text-base font-normal leading-relaxed focus-visible:ring-0 focus-visible:ring-offset-0 bg-transparent resize-y placeholder:text-muted-foreground/60 shadow-none"
             />
+
+            {/* Sugestão de teste rápido */}
+            {!text && (
+              <div className="pt-2 border-t border-border/40 flex flex-wrap items-center gap-2">
+                <span className="text-[11px] text-muted-foreground">Exemplo para testar:</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setText(
+                      "cliente breno menon telefone 19981564250, endreço santa rita do passa quatro centro cpf 41275798896, serviço criaçao de landing page personalizada por ia, 800 reais prazo 7 dias obs: ele so vai pagar quando fechar a venda do sitio dele"
+                    )
+                  }
+                  className="text-[11px] px-2.5 py-1 rounded-md bg-muted hover:bg-muted/80 text-foreground transition-colors cursor-pointer text-left line-clamp-1 border border-border"
+                >
+                  cliente breno menon telefone 19981564250, endreço santa rita...
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Action Trigger */}
           <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="text-xs text-muted-foreground flex items-center gap-1.5">
               <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-              <span>A IA identificará o cliente, os tópicos de serviços e os valores automaticamente.</span>
+              <span>A IA identifica cliente, telefone, CPF, endereço, serviço, prazos e observações.</span>
             </div>
 
             <Button
@@ -254,7 +284,7 @@ export function QuoteInputSection({
               size="lg"
               onClick={handleOrganizeWithAI}
               disabled={loading || !text.trim()}
-              className="w-full sm:w-auto gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold shadow-md px-7 text-sm sm:text-base h-11"
+              className="w-full sm:w-auto gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold shadow-md px-7 text-sm sm:text-base h-11 cursor-pointer"
             >
               {loading ? (
                 <>
