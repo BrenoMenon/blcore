@@ -9,14 +9,6 @@ import {
   reconcileBudgetWithSource,
 } from "./budget-parser";
 
-/**
- * AI-powered budget parser. Uses Gemini with a strict JSON schema so the
- * model can't return free text — every field is typed and validated before
- * it ever reaches the UI. Falls back to the deterministic regex engine
- * (smartParseBudget) whenever this throws, so a missing/invalid API key or
- * a flaky network never breaks the flow for the user.
- */
-
 const GEMINI_MODEL = "gemini-2.5-flash";
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
@@ -59,7 +51,13 @@ const BUDGET_RESPONSE_SCHEMA = {
           unitPrice: { type: "NUMBER" },
           totalPrice: { type: "NUMBER" },
         },
-        required: ["name", "description", "quantity", "unitPrice", "totalPrice"],
+        required: [
+          "name",
+          "description",
+          "quantity",
+          "unitPrice",
+          "totalPrice",
+        ],
       },
     },
     subtotal: { type: "NUMBER" },
@@ -90,77 +88,188 @@ function buildPrompt(
   clientNameSuggestion?: string,
   companyNameSuggestion?: string,
 ): string {
-  return `Você é um assistente que organiza orçamentos ditados ou digitados livremente por um prestador de serviços brasileiro, e devolve APENAS um JSON estruturado com os dados extraídos. O texto pode vir de reconhecimento de voz (fala natural, sem pontuação, com hesitações) — nunca assuma que os campos vêm rotulados.
+  return `Você é o motor de organização de orçamentos do BL CORE.
 
-TEXTO DITADO/DIGITADO PELO USUÁRIO:
+Sua tarefa é transformar o texto falado ou digitado pelo usuário em dados estruturados para um orçamento profissional.
+
+IMPORTANTE:
+- O BL CORE atende QUALQUER profissão: oficina, social media, manicure, barbearia, salão, eletricista, marceneiro, fotógrafo, construção, informática, estética automotiva e qualquer outro negócio.
+- NÃO existe formulário específico de ramo.
+- Você deve criar campos dinâmicos somente para as informações relevantes que aparecerem no texto.
+- NÃO invente dados.
+- NÃO reutilize dados de outro orçamento.
+- O texto abaixo é a ÚNICA fonte de verdade.
+
+TEXTO ORIGINAL:
 """
 ${rawText}
 """
 
-Contexto adicional (use apenas como referência, nunca invente por cima disso):
-- Categoria/ramo da empresa que está emitindo o orçamento: ${category || "não informado"}
-- Nome da empresa que está emitindo o orçamento (NÃO é o cliente): ${companyNameSuggestion || "não informado"}
-${clientNameSuggestion ? `- Sugestão de nome do cliente já digitada em outro campo: "${clientNameSuggestion}"` : ""}
+CONTEXTO DA EMPRESA:
+- Ramo/categoria: ${category || "não informado"}
+- Nome da empresa emissora: ${companyNameSuggestion || "não informado"}
+${clientNameSuggestion ? `- Sugestão de cliente já informada: ${clientNameSuggestion}` : ""}
 
-REGRAS OBRIGATÓRIAS (o erro mais comum é misturar esses campos — preste atenção redobrada):
-1. "client.name": APENAS o nome completo da pessoa/cliente. NUNCA inclua telefone, CPF, valores ou qualquer outra informação junto do nome. Se o texto disser algo como "Breno Menon telefone tal e tal", o nome é só "Breno Menon" — pare no primeiro sinal de outro dado (telefone, CPF, endereço, valor etc), mesmo que não haja vírgula ou pontuação separando.
-2. "client.phone": apenas o telefone/WhatsApp do cliente, no formato (DD) 90000-0000 ou (DD) 0000-0000. Nunca coloque o telefone em outro campo. Se não houver telefone mencionado, deixe "".
-3. "client.document": CPF no formato 000.000.000-00 ou CNPJ no formato 00.000.000/0000-00, conforme o que for mencionado. Se não houver, deixe "".
-4. "client.address": cidade/endereço do cliente, se mencionado. Senão "".
-5. "client.email": e-mail do cliente, se mencionado. Senão "".
-6. NUNCA invente, deduza ou complete dados que não foram ditos explicitamente. Campo não mencionado = string vazia "" (ou 0 para números, [] para listas, null para validityDays).
-7. "items": cada serviço/produto citado vira um item, com "quantity" (padrão 1 se não citado), "unitPrice" e "totalPrice" (mesmo valor se não houver diferença entre eles). Se só um valor total for citado sem detalhar itens, crie um único item com o nome do serviço prestado.
-8. "subtotal" é a soma dos itens antes do desconto; "total" é subtotal menos "discount". Se só um valor for citado, subtotal = total = esse valor e discount = 0.
-9. Valores em reais: interprete corretamente o formato brasileiro (vírgula como separador decimal, ponto como separador de milhar). "mil e duzentos" ou "1200" deve virar 1200.
-10. "paymentTerms": forma de pagamento citada (ex: "à vista no pix", "50% agora e 50% na entrega"). Se não citado, "".
-11. "categorySpecificFields": só preencha se houver um prazo de ENTREGA/EXECUÇÃO explícito (use key "deadline", label "Prazo", value com o prazo descrito). Não invente outros campos além desse.
-12. "validityDays": só preencha (número de dias) se o texto mencionar explicitamente por quantos dias a PROPOSTA (orçamento) é válida (ex: "proposta válida por 15 dias"). Isso é diferente do prazo de entrega do item 11. Se não mencionado, use null.
-13. "notes": observações, pendências ou garantias citadas. Se não houver, "".
-14. "title": um título curto para o orçamento baseado no serviço principal (ex: "Orçamento de Landing Page"). Se nenhum serviço específico for identificável, use "Orçamento de Serviços".
-15. "category": use "${category || "Serviços"}" a menos que o texto contradiga isso explicitamente.
+REGRAS DE EXTRAÇÃO:
 
-Responda apenas com o JSON, sem nenhum texto adicional.`;
+1. CLIENTE
+"client.name" deve conter SOMENTE o nome do cliente. Pare antes de telefone, CPF, endereço, veículo ou qualquer outra informação.
+"client.phone" deve conter SOMENTE telefone/WhatsApp.
+"client.document" deve conter CPF ou CNPJ.
+"client.email" deve conter e-mail.
+"client.address" deve conter endereço/cidade.
+Se um desses dados não estiver no texto original, deixe vazio.
+
+2. CAMPOS DINÂMICOS
+"categorySpecificFields" é um formulário CORINGA.
+Crie um campo para cada informação importante que não pertence aos dados universais do cliente e que seja útil para entender o orçamento.
+Exemplos:
+- Oficina: Veículo, Placa, Problema, Ano, Quilometragem.
+- Manicure: Procedimento, Formato, Tamanho, Cor.
+- Barbearia: Corte, Barba, Acabamento.
+- Social Media: Projeto, Plataforma, Quantidade de posts, Integração.
+- Marcenaria: Móvel, Medidas, Material, Acabamento.
+- Construção: Ambiente, Metragem, Material, Etapa.
+Esses exemplos NÃO são uma lista fixa. Crie somente o que estiver efetivamente no texto.
+Não crie campos vazios.
+Não copie a categoria como se fosse um campo.
+Prazo de entrega/execução deve ser um campo dinâmico com key "deadline" e label "Prazo".
+
+3. ITENS
+Cada produto ou serviço com preço próprio deve virar UMA LINHA separada em "items".
+Exemplo:
+"para-choque 850, capô 1200, farol direito 680"
+deve gerar TRÊS itens:
+- Para-choque: 850
+- Capô: 1200
+- Farol direito: 680
+
+NUNCA transforme vários itens com preços individuais em um único item chamado "Serviço Prestado".
+Se houver quantidade explícita, use-a. Caso contrário, quantidade = 1.
+unitPrice é o preço unitário.
+totalPrice = quantidade x preço unitário.
+
+4. TOTAL
+Se o texto disser explicitamente "total 5520", o campo "total" deve ser 5520.
+Se houver itens com preços individuais, "subtotal" deve ser a soma deles.
+Não crie item artificial para fazer a soma bater.
+Se houver desconto explicitamente informado, coloque em "discount".
+
+5. FORMATO LIVRE
+O usuário pode falar naturalmente, sem vírgulas e sem rótulos:
+"João da Silva Honda Civic 2018 placa ABC1D23 batida dianteira..."
+Você deve separar semanticamente as informações.
+
+Também pode usar:
+"João da Silva | Honda Civic 2018 | ABC1D23 | batida dianteira | para-choque 850..."
+Interprete os separadores como organização do texto, não como parte dos valores.
+
+6. VALORES
+Interprete reais no padrão brasileiro.
+"850", "850 reais", "R$ 850,00" = 850.
+"1.200" = 1200.
+"1.200,50" = 1200.50.
+"mil e duzentos" = 1200.
+
+7. PRAZO
+"prazo mais ou menos 10 dias" deve resultar em "Aproximadamente 10 dias".
+"prazo de 15 dias úteis" deve resultar em "15 dias úteis".
+Não confunda prazo de entrega com validade da proposta.
+
+8. PAGAMENTO
+Extraia exatamente a condição mencionada.
+Exemplo: "50% agora e 50% na entrega".
+Se "pagamento combinar", use "Combinar".
+Se não foi informado, deixe vazio.
+
+9. VALIDADE
+"proposta válida por 10 dias" -> validityDays = 10.
+Se não houver validade, use null.
+
+10. OBSERVAÇÕES
+Informações como:
+"peças podem mudar de preço"
+"pendente de enviar o logo"
+"valor sujeito a alteração"
+devem ir para "notes".
+Não invente observações.
+
+11. TÍTULO
+Crie um título curto e profissional baseado no conteúdo.
+Exemplo para oficina: "Orçamento de Reparação Automotiva".
+Exemplo para social media: "Orçamento de Landing Page".
+Não invente o serviço.
+
+12. PROIBIDO
+- Não usar dados do contexto da empresa como dados do cliente.
+- Não preencher endereço com informação não dita.
+- Não transformar o valor total em item quando já existem itens individuais.
+- Não criar campos vazios.
+- Não manter dados de um orçamento anterior.
+- Não inventar telefone, CPF, e-mail, endereço, veículo, placa ou preços.
+
+Responda SOMENTE com JSON válido seguindo o schema fornecido.`;
 }
 
 function normalizeDocument(raw: string): string {
   if (!raw) return "";
+
   const digits = raw.replace(/\D/g, "");
-  if (digits.length === 11) return formatCpf(digits) || raw.trim();
-  if (digits.length === 14) return formatCnpj(digits) || raw.trim();
+
+  if (digits.length === 11) {
+    return formatCpf(digits) || raw.trim();
+  }
+
+  if (digits.length === 14) {
+    return formatCnpj(digits) || raw.trim();
+  }
+
   return raw.trim();
 }
 
 function normalizePhone(raw: string): string {
   if (!raw) return "";
+
   const digits = raw.replace(/\D/g, "");
+
   return formatPhone(digits) || raw.trim();
 }
 
-function toParsedItem(item: any, index: number): ParsedItem {
-  const quantity = Number(item?.quantity) || 1;
+function toParsedItem(
+  item: any,
+  index: number,
+): ParsedItem {
+  const quantity =
+    Number(item?.quantity) > 0
+      ? Number(item.quantity)
+      : 1;
+
   const unitPrice =
-    typeof item?.unitPrice === "number" ? item.unitPrice : parseBrazilianMoney(String(item?.unitPrice ?? "0"));
+    typeof item?.unitPrice === "number"
+      ? item.unitPrice
+      : parseBrazilianMoney(
+          String(item?.unitPrice ?? "0"),
+        );
+
   const totalPrice =
     typeof item?.totalPrice === "number"
       ? item.totalPrice
-      : parseBrazilianMoney(String(item?.totalPrice ?? "0")) || unitPrice * quantity;
+      : unitPrice * quantity;
 
   return {
     id: `item-${Date.now()}-${index + 1}`,
-    name: String(item?.name || "Serviço Prestado").trim(),
-    description: String(item?.description || "").trim(),
+    name: String(
+      item?.name || "Serviço Prestado",
+    ).trim(),
+    description: String(
+      item?.description || "",
+    ).trim(),
     quantity,
     unitPrice,
     totalPrice,
   };
 }
 
-/**
- * Calls Gemini with a strict JSON schema and normalizes the result into the
- * same ParsedBudget shape the regex engine produces. Throws on any failure
- * (missing key, network error, bad response) — the caller is expected to
- * catch this and fall back to smartParseBudget.
- */
 export async function parseBudgetWithGemini(
   rawText: string,
   category: string | undefined,
@@ -169,99 +278,213 @@ export async function parseBudgetWithGemini(
   apiKey: string,
 ): Promise<ParsedBudget> {
   if (!apiKey) {
-    throw new Error("GEMINI_API_KEY não configurada");
+    throw new Error(
+      "GEMINI_API_KEY não configurada",
+    );
   }
 
-  const prompt = buildPrompt(rawText, category, clientNameSuggestion, companyNameSuggestion);
+  const prompt = buildPrompt(
+    rawText,
+    category,
+    clientNameSuggestion,
+    companyNameSuggestion,
+  );
 
-  const response = await fetch(`${GEMINI_ENDPOINT}?key=${apiKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: BUDGET_RESPONSE_SCHEMA,
-        temperature: 0.1,
+  const response = await fetch(
+    `${GEMINI_ENDPOINT}?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
       },
-    }),
-  });
+      body: JSON.stringify({
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: prompt,
+              },
+            ],
+          },
+        ],
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema:
+            BUDGET_RESPONSE_SCHEMA,
+          temperature: 0,
+        },
+      }),
+    },
+  );
 
   if (!response.ok) {
-    const errorBody = await response.text().catch(() => "");
-    throw new Error(`Gemini API respondeu ${response.status}: ${errorBody.slice(0, 200)}`);
+    const errorBody =
+      await response
+        .text()
+        .catch(() => "");
+
+    throw new Error(
+      `Gemini API respondeu ${response.status}: ${errorBody.slice(
+        0,
+        200,
+      )}`,
+    );
   }
 
-  const data = await response.json();
-  const outputText: string | undefined = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  const data =
+    await response.json();
+
+  const outputText: string | undefined =
+    data?.candidates?.[0]?.content?.parts?.[0]
+      ?.text;
+
   if (!outputText) {
-    throw new Error("Gemini não retornou conteúdo");
+    throw new Error(
+      "Gemini não retornou conteúdo",
+    );
   }
 
   let parsed: any;
+
   try {
     parsed = JSON.parse(outputText);
   } catch {
-    throw new Error("Gemini retornou um JSON inválido");
+    throw new Error(
+      "Gemini retornou um JSON inválido",
+    );
   }
 
-  const items: ParsedItem[] = Array.isArray(parsed.items) && parsed.items.length > 0
-    ? parsed.items.map(toParsedItem)
-    : [];
+  const items: ParsedItem[] =
+    Array.isArray(parsed.items) &&
+    parsed.items.length > 0
+      ? parsed.items.map(toParsedItem)
+      : [];
 
   const subtotal =
     typeof parsed.subtotal === "number"
       ? parsed.subtotal
-      : items.reduce((sum, item) => sum + item.totalPrice, 0);
-  const discount = typeof parsed.discount === "number" ? parsed.discount : 0;
-  const total = typeof parsed.total === "number" ? parsed.total : Math.max(subtotal - discount, 0);
+      : items.reduce(
+          (sum, item) =>
+            sum + item.totalPrice,
+          0,
+        );
 
-  const categorySpecificFields: CategorySpecificField[] = Array.isArray(parsed.categorySpecificFields)
-    ? parsed.categorySpecificFields
-        .filter((field: any) => field?.value)
-        .map((field: any) => ({
-          key: String(field.key || "field"),
-          label: String(field.label || "Campo"),
-          value: String(field.value),
-        }))
-    : [];
+  const discount =
+    typeof parsed.discount === "number"
+      ? parsed.discount
+      : 0;
 
-  const clientName = String(parsed.client?.name || clientNameSuggestion || "").trim();
-  const serviceName = items[0]?.name || "Serviço Prestado";
+  const total =
+    typeof parsed.total === "number"
+      ? parsed.total
+      : Math.max(
+          subtotal - discount,
+          0,
+        );
+
+  const categorySpecificFields: CategorySpecificField[] =
+    Array.isArray(
+      parsed.categorySpecificFields,
+    )
+      ? parsed.categorySpecificFields
+          .filter(
+            (field: any) =>
+              field?.value,
+          )
+          .map(
+            (field: any) => ({
+              key: String(
+                field.key ||
+                  "field",
+              ),
+              label: String(
+                field.label ||
+                  "Informação",
+              ),
+              value: String(
+                field.value,
+              ),
+            }),
+          )
+      : [];
+
+  const serviceName =
+    items[0]?.name ||
+    "Serviço Prestado";
 
   const normalizedBudget: ParsedBudget = {
-    title: String(parsed.title || (serviceName === "Serviço Prestado" ? "Orçamento de Serviços" : `Orçamento de ${serviceName}`)),
-    category: String(parsed.category || category || "Serviços"),
+    title: String(
+      parsed.title ||
+        (items.length > 1
+          ? "Orçamento de Serviços"
+          : `Orçamento de ${serviceName}`),
+    ),
+
+    category: String(
+      parsed.category ||
+        category ||
+        "Serviços",
+    ),
+
     client: {
-      name: clientName,
-      phone: normalizePhone(String(parsed.client?.phone || "")),
-      email: String(parsed.client?.email || "").trim(),
-      document: normalizeDocument(String(parsed.client?.document || "")),
-      address: String(parsed.client?.address || "").trim(),
+      name: String(
+        parsed.client?.name ||
+          "",
+      ).trim(),
+
+      phone: normalizePhone(
+        String(
+          parsed.client?.phone ||
+            "",
+        ),
+      ),
+
+      email: String(
+        parsed.client?.email ||
+          "",
+      ).trim(),
+
+      document:
+        normalizeDocument(
+          String(
+            parsed.client
+              ?.document || "",
+          ),
+        ),
+
+      address: String(
+        parsed.client?.address ||
+          "",
+      ).trim(),
     },
+
     categorySpecificFields,
-    items:
-      items.length > 0
-        ? items
-        : [
-            {
-              id: `item-${Date.now()}-1`,
-              name: "Serviço Prestado",
-              description: "",
-              quantity: 1,
-              unitPrice: total,
-              totalPrice: total,
-            },
-          ],
+
+    items,
+
     subtotal,
+
     discount,
+
     total,
-    paymentTerms: String(parsed.paymentTerms || "").trim(),
-    validityDays: typeof parsed.validityDays === "number" ? parsed.validityDays : null,
-    notes: String(parsed.notes || "").trim(),
+
+    paymentTerms: String(
+      parsed.paymentTerms ||
+        "",
+    ).trim(),
+
+    validityDays:
+      typeof parsed.validityDays ===
+      "number"
+        ? parsed.validityDays
+        : null,
+
+    notes: String(
+      parsed.notes || "",
+    ).trim(),
   };
 
-  // Never trust model interpretation over explicit facts from the source text.
   return reconcileBudgetWithSource(
     rawText,
     normalizedBudget,
