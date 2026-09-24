@@ -1,286 +1,220 @@
-import { useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
-import { useSpeechToText } from "@/hooks/useSpeechToText";
-import {
-  Mic,
-  MicOff,
-  Sparkles,
-  Wand2,
-  Volume2,
-  RotateCcw,
-  CheckCircle2,
-  AlertCircle,
-} from "lucide-react";
-import { toast } from "sonner";
-import { QuoteData, CompanyBranding } from "@/types/quotes";
-import { smartParseBudget } from "@/lib/budget-parser";
+import React, { useState } from "react";
+import { Mic, Send, Loader2 } from "lucide-react";
 
 interface QuoteInputSectionProps {
-  companyCategory: string;
-  companyName: string;
-  branding: CompanyBranding;
-  onOrganized: (budget: QuoteData) => void;
+  onQuoteGenerated: (quote: any) => void;
+  category?: string;
+  companyName?: string;
 }
 
 export function QuoteInputSection({
-  companyCategory,
+  onQuoteGenerated,
+  category,
   companyName,
-  branding,
-  onOrganized,
 }: QuoteInputSectionProps) {
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isListening, setIsListening] =
+    useState(false);
 
-  const {
-    isListening,
-    interimTranscript,
-    isSupported,
-    error: speechError,
-    startListening,
-    stopListening,
-    resetTranscript,
-  } = useSpeechToText({
-    onResult: (newTranscript) => {
-      setText((prev) => {
-        const trimmed = prev.trim();
-        if (!trimmed) return newTranscript;
-        if (trimmed.includes(newTranscript)) return trimmed;
-        return trimmed + " " + newTranscript;
-      });
-    },
-  });
-
-  async function handleOrganizeWithAI() {
-    const rawInput = text.trim();
-    if (!rawInput) {
-      toast.error("Por favor, digite ou dite os detalhes do orçamento.");
+  const generateQuote = async () => {
+    if (!text.trim() || loading) {
       return;
     }
 
     setLoading(true);
-    const toastId = toast.loading("Organizando orçamento com IA...");
 
     try {
-      let budget: any = null;
-
-      // 1. Attempt server-side Gemini route if running full-stack
-      try {
-        const res = await fetch("/api/gemini/organize-budget", {
+      const response = await fetch(
+        "/api/gemini/organize-budget",
+        {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
           body: JSON.stringify({
-            text: rawInput,
-            category: companyCategory,
-            companyName,
+            text: text.trim(),
+            category:
+              category || "",
+            companyName:
+              companyName || "",
           }),
-        });
+        },
+      );
 
-        if (res.ok) {
-          const contentType = res.headers.get("content-type") || "";
-          if (contentType.includes("application/json")) {
-            const data = await res.json();
-            if (data?.budget) {
-              budget = data.budget;
-            }
-          }
-        }
-      } catch {
-        // Network error, offline, or static hosting (Netlify) -> fallback to client-side smart parser below
+      if (!response.ok) {
+        throw new Error(
+          "Não foi possível organizar o orçamento.",
+        );
       }
 
-      // 2. If API didn't return a budget (e.g. 404 on Netlify static host or API offline), use instant client-side AI parser
-      if (!budget) {
-        budget = smartParseBudget(rawInput, companyCategory, undefined, companyName);
+      const data =
+        await response.json();
+
+      if (!data?.quote) {
+        throw new Error(
+          "A IA não retornou um orçamento válido.",
+        );
       }
 
-      // Ensure full quote structure with unique ID and current date
-      const completeQuote: QuoteData = {
-        id: `quote-${Date.now()}`,
-        number: "",
-        createdAt: new Date().toISOString(),
-        title: budget.title || "Orçamento de Serviços",
-        category: budget.category || companyCategory || "Serviços Gerais",
-        client: {
-          name: budget.client?.name || "",
-          phone: budget.client?.phone || "",
-          email: budget.client?.email || "",
-          document: budget.client?.document || "",
-          address: budget.client?.address || "",
-        },
-        categorySpecificFields: Array.isArray(budget.categorySpecificFields)
-          ? budget.categorySpecificFields
-          : [],
-        items:
-          Array.isArray(budget.items) && budget.items.length > 0
-            ? budget.items
-            : [
-                {
-                  id: `item-${Date.now()}-1`,
-                  name: "Serviço Prestado",
-                  description: "",
-                  quantity: 1,
-                  unitPrice: budget.subtotal || 0,
-                  totalPrice: budget.subtotal || 0,
-                },
-              ],
-        subtotal: budget.subtotal || 0,
-        discount: budget.discount || 0,
-        total: budget.total || budget.subtotal || 0,
-        paymentTerms: budget.paymentTerms || "",
-        validityDays: budget.validityDays ?? null,
-        notes: budget.notes || "",
-        branding: {
-          ...branding,
-          companyName: companyName || branding.companyName || "Minha Empresa",
-          category: budget.category || companyCategory || branding.category,
-        },
-      };
+      onQuoteGenerated(data.quote);
+    } catch (error) {
+      console.error(
+        "Erro ao gerar orçamento:",
+        error,
+      );
 
-      toast.dismiss(toastId);
-      toast.success("Orçamento estruturado com sucesso pela IA!", {
-        description: completeQuote.client.name
-          ? `Cliente identificado: ${completeQuote.client.name}`
-          : "Revise os campos e complete os dados desejados.",
-      });
-
-      onOrganized(completeQuote);
-    } catch (err: any) {
-      toast.dismiss(toastId);
-      toast.error("Erro ao organizar com IA", {
-        description: err.message || "Tente novamente ou revise o texto.",
-      });
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Erro ao gerar orçamento.",
+      );
     } finally {
       setLoading(false);
     }
-  }
+  };
+
+  const startListening = () => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      alert(
+        "O reconhecimento de voz não está disponível neste navegador.",
+      );
+      return;
+    }
+
+    const recognition =
+      new SpeechRecognition();
+
+    recognition.lang = "pt-BR";
+    recognition.continuous = false;
+    recognition.interimResults = true;
+
+    setIsListening(true);
+
+    recognition.onresult = (
+      event: any,
+    ) => {
+      let transcript = "";
+
+      for (
+        let i = event.resultIndex;
+        i < event.results.length;
+        i++
+      ) {
+        transcript +=
+          event.results[i][0]
+            .transcript;
+      }
+
+      setText((current) => {
+        const trimmedCurrent =
+          current.trim();
+
+        if (!trimmedCurrent) {
+          return transcript.trim();
+        }
+
+        return `${trimmedCurrent} ${transcript.trim()}`;
+      });
+    };
+
+    recognition.onerror = () => {
+      setIsListening(false);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognition.start();
+  };
 
   return (
-    <div className="space-y-6">
-      <Card className="bl-glass border-primary/20 shadow-md">
-        <CardHeader className="pb-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <CardTitle className="text-xl font-bold flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-primary animate-pulse" />
-                Criar Orçamento Inteligente
-              </CardTitle>
-              <CardDescription className="text-xs sm:text-sm mt-1">
-                Fale pelo microfone ou digite livremente. A IA extrai automaticamente o cliente, os serviços, valores e organiza tudo por tópicos.
-              </CardDescription>
-            </div>
-            <Badge variant="outline" className="self-start sm:self-center border-primary/40 bg-primary/10 text-primary px-3 py-1 font-semibold text-xs shrink-0">
-              Categoria ativa: {companyCategory || "Social Media"}
-            </Badge>
-          </div>
-        </CardHeader>
+    <section className="rounded-xl border bg-white p-5 shadow-sm">
+      <div className="mb-4">
+        <h2 className="text-lg font-semibold">
+          Criar orçamento com IA
+        </h2>
 
-        <CardContent className="space-y-4">
-          {/* ONE UNIFIED INPUT CONTAINER: Microfone (apenas ícone) + campo de escrita integrado */}
-          <div className="rounded-2xl border-2 border-border focus-within:border-primary/60 bg-card/70 transition-all p-3 sm:p-4 shadow-xs">
-            {/* Barra interna integrada: apenas ícone do microfone e botão de limpar */}
-            <div className="flex items-center justify-between pb-2 mb-2 border-b border-border/40">
-              <div className="flex items-center gap-2.5">
-                {/* Botão de microfone: APENAS o ícone, sem texto escrito depois */}
-                <button
-                  type="button"
-                  onClick={isListening ? stopListening : startListening}
-                  title={isListening ? "Parar gravação" : "Gravar áudio"}
-                  aria-label="Gravar áudio"
-                  className={`h-10 w-10 sm:h-11 sm:w-11 rounded-full flex items-center justify-center transition-all shadow-sm cursor-pointer ${
-                    isListening
-                      ? "bg-destructive text-white animate-pulse ring-4 ring-destructive/30"
-                      : "bg-primary text-primary-foreground hover:bg-primary/90 hover:scale-105 active:scale-95"
-                  }`}
-                >
-                  {isListening ? (
-                    <MicOff className="h-5 w-5" />
-                  ) : (
-                    <Mic className="h-5 w-5" />
-                  )}
-                </button>
+        <p className="mt-1 text-sm text-gray-500">
+          Digite ou fale o orçamento do jeito
+          que você normalmente explicaria para
+          outra pessoa. A IA identifica os dados
+          do cliente, produtos, serviços,
+          valores, prazos, pagamento e outras
+          informações relevantes
+          automaticamente.
+        </p>
+      </div>
 
-                {isListening && (
-                  <span className="flex items-center gap-1.5 text-xs font-semibold text-destructive animate-pulse">
-                    <span className="h-2 w-2 rounded-full bg-destructive" />
-                    Ouvindo...
-                  </span>
-                )}
-              </div>
+      <div className="relative">
+        <textarea
+          value={text}
+          onChange={(event) =>
+            setText(event.target.value)
+          }
+          placeholder="Ex.: O cliente João pediu um orçamento para troca do para-choque por R$ 850, capô por R$ 1.200 e pintura por R$ 900. Prazo de 10 dias. Pagamento 50% na entrada e 50% na entrega..."
+          rows={8}
+          className="w-full resize-none rounded-xl border px-4 py-3 pr-14 outline-none transition focus:border-gray-400 focus:ring-2 focus:ring-gray-100"
+        />
 
-              {text && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setText("");
-                    resetTranscript();
-                  }}
-                  className="h-8 px-2.5 text-xs text-muted-foreground hover:text-foreground"
-                  title="Limpar texto"
-                >
-                  <RotateCcw className="h-3.5 w-3.5 mr-1" /> Limpar
-                </Button>
-              )}
-            </div>
+        <button
+          type="button"
+          onClick={startListening}
+          disabled={
+            loading || isListening
+          }
+          className={`absolute bottom-3 right-3 rounded-full p-3 transition ${
+            isListening
+              ? "bg-red-100 text-red-600"
+              : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+          }`}
+          aria-label={
+            isListening
+              ? "Parar gravação"
+              : "Falar orçamento"
+          }
+        >
+          <Mic size={20} />
+        </button>
+      </div>
 
-            {/* Interim live text feedback while speaking */}
-            {isListening && interimTranscript && (
-              <div className="mb-2 p-2.5 rounded-lg bg-primary/10 border border-primary/20 text-xs italic text-primary">
-                <Volume2 className="h-3.5 w-3.5 inline mr-1 animate-bounce" />
-                {interimTranscript}
-              </div>
-            )}
+      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs text-gray-500">
+          A IA não deve inventar informações.
+          Tudo que não estiver no texto será
+          deixado em branco para você revisar.
+        </p>
 
-            {speechError && (
-              <div className="mb-2 flex items-center gap-2 text-xs text-amber-500">
-                <AlertCircle className="h-4 w-4 shrink-0" />
-                <span>{speechError}</span>
-              </div>
-            )}
-
-            {/* Textarea perfeitamente integrada no mesmo bloco */}
-            <Textarea
-              placeholder="Fale no microfone ou escreva aqui..."
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              rows={6}
-              className="w-full border-0 p-1 text-base font-normal leading-relaxed focus-visible:ring-0 focus-visible:ring-offset-0 bg-transparent resize-y placeholder:text-muted-foreground/60 shadow-none"
-            />
-          </div>
-
-          {/* Action Trigger */}
-          <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-              <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-              <span>A IA identifica cliente, telefone, CPF, endereço, serviço, prazos e observações.</span>
-            </div>
-
-            <Button
-              type="button"
-              size="lg"
-              onClick={handleOrganizeWithAI}
-              disabled={loading || !text.trim()}
-              className="w-full sm:w-auto gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold shadow-md px-7 text-sm sm:text-base h-11 cursor-pointer"
-            >
-              {loading ? (
-                <>
-                  <Wand2 className="h-5 w-5 animate-spin" />
-                  Estruturando Orçamento...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-5 w-5" />
-                  Organizar com IA
-                </>
-              )}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+        <button
+          type="button"
+          onClick={generateQuote}
+          disabled={
+            !text.trim() || loading
+          }
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-black px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {loading ? (
+            <>
+              <Loader2
+                size={18}
+                className="animate-spin"
+              />
+              Organizando...
+            </>
+          ) : (
+            <>
+              <Send size={18} />
+              Gerar orçamento
+            </>
+          )}
+        </button>
+      </div>
+    </section>
   );
 }
