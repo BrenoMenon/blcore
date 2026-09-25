@@ -735,12 +735,15 @@ export function reconcileBudgetWithSource(
     typeof value === "string" &&
     value.trim().length > 0;
 
+  // Only count an item as "real" if it has a name AND an actual price —
+  // a named-but-zero-priced item (common regex artifact) must never win
+  // over a priced item from the other source.
   const sourceItems =
     explicit.items.filter(
       (item) =>
         item.name !==
-          "Serviço Prestado" ||
-        item.unitPrice > 0,
+          "Serviço Prestado" &&
+        item.totalPrice > 0,
     );
 
   const geminiItems =
@@ -750,8 +753,7 @@ export function reconcileBudgetWithSource(
       ? budget.items.filter(
           (item) =>
             item.name &&
-            item.name !==
-              "Serviço Prestado",
+            item.totalPrice > 0,
         )
       : [];
 
@@ -769,25 +771,23 @@ export function reconcileBudgetWithSource(
       0,
     );
 
+  // Prefer whichever priced item set exists — Gemini first, since it
+  // reads free-form speech far better than the regex engine. The
+  // explicit.total match is only used to pick between the two sets when
+  // BOTH have priced items and they disagree with each other.
   const finalItems =
-    explicit.total > 0 &&
+    geminiItems.length > 0 &&
     sourceItems.length > 0 &&
-    Math.abs(
-      sourceSum -
-        explicit.total,
-    ) < 0.01
+    explicit.total > 0 &&
+    Math.abs(sourceSum - explicit.total) < 0.01 &&
+    Math.abs(geminiSum - explicit.total) >= 0.01
       ? sourceItems
-      : explicit.total > 0 &&
-          geminiItems.length > 0 &&
-          Math.abs(
-            geminiSum -
-              explicit.total,
-          ) < 0.01
+      : geminiItems.length > 0
         ? geminiItems
         : sourceItems.length > 0
           ? sourceItems
-          : geminiItems.length > 0
-            ? geminiItems
+          : Array.isArray(budget.items) && budget.items.length > 0
+            ? budget.items
             : explicit.items;
 
   const dynamicFields = [
@@ -813,28 +813,28 @@ export function reconcileBudgetWithSource(
     },
   );
 
-  const explicitTotal =
-    explicit.total > 0
-      ? explicit.total
-      : null;
+  const finalItemsSum =
+    finalItems.reduce(
+      (sum, item) =>
+        sum + item.totalPrice,
+      0,
+    );
 
   const subtotal =
-    explicitTotal !== null
-      ? sourceItems.length > 0
-        ? sourceItems.reduce(
-            (sum, item) =>
-              sum +
-              item.totalPrice,
-            0,
-          )
-        : explicitTotal
-      : budget.subtotal || 0;
+    finalItemsSum > 0
+      ? finalItemsSum
+      : typeof budget.subtotal === "number" &&
+          budget.subtotal > 0
+        ? budget.subtotal
+        : explicit.total || 0;
 
-  const total =
-    explicitTotal !== null
-      ? explicitTotal
-      : budget.total ||
-        subtotal;
+  const discount =
+    typeof budget.discount === "number" &&
+    budget.discount > 0
+      ? budget.discount
+      : 0;
+
+  const total = Math.max(subtotal - discount, 0);
 
   return {
     ...budget,
@@ -851,27 +851,41 @@ export function reconcileBudgetWithSource(
       category ||
       explicit.category,
 
+    // IMPORTANT: prefer what Gemini extracted for client data — it reads
+    // natural, unlabeled speech far better than the regex engine. The
+    // regex result ("explicit") is only used per-field when Gemini left
+    // that specific field empty, never as a blanket override.
     client: {
       name:
-        explicit.client.name ||
-        clientNameSuggestion ||
-        "",
+        hasText(budget.client?.name)
+          ? budget.client.name
+          : explicit.client.name ||
+            clientNameSuggestion ||
+            "",
 
       phone:
-        explicit.client.phone ||
-        "",
+        hasText(budget.client?.phone)
+          ? budget.client.phone
+          : explicit.client.phone ||
+            "",
 
       email:
-        explicit.client.email ||
-        "",
+        hasText(budget.client?.email)
+          ? budget.client.email
+          : explicit.client.email ||
+            "",
 
       document:
-        explicit.client.document ||
-        "",
+        hasText(budget.client?.document)
+          ? budget.client.document
+          : explicit.client.document ||
+            "",
 
       address:
-        explicit.client.address ||
-        "",
+        hasText(budget.client?.address)
+          ? budget.client.address
+          : explicit.client.address ||
+            "",
     },
 
     categorySpecificFields:
@@ -882,38 +896,35 @@ export function reconcileBudgetWithSource(
 
     subtotal,
 
-    discount:
-      explicitTotal !== null
-        ? 0
-        : budget.discount || 0,
+    discount,
 
     total,
 
     paymentTerms:
       hasText(
-        explicit.paymentTerms,
+        budget.paymentTerms,
       )
-        ? explicit.paymentTerms
+        ? budget.paymentTerms
         : hasText(
-              budget.paymentTerms,
+              explicit.paymentTerms,
             )
-          ? budget.paymentTerms
+          ? explicit.paymentTerms
           : "",
 
     validityDays:
-      explicit.validityDays !==
-      null
-        ? explicit.validityDays
-        : budget.validityDays ??
+      budget.validityDays !== null &&
+      budget.validityDays !== undefined
+        ? budget.validityDays
+        : explicit.validityDays ??
           null,
 
     notes:
-      hasText(explicit.notes)
-        ? explicit.notes
+      hasText(budget.notes)
+        ? budget.notes
         : hasText(
-              budget.notes,
+              explicit.notes,
             )
-          ? budget.notes
+          ? explicit.notes
           : "",
   };
 }
