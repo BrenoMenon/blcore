@@ -9,7 +9,7 @@ import {
   reconcileBudgetWithSource,
 } from "./budget-parser";
 
-const GEMINI_MODEL = "gemini-2.5-flash";
+const GEMINI_MODEL = "gemini-3.8-flash";
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
 const BUDGET_RESPONSE_SCHEMA = {
