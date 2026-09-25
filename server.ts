@@ -52,13 +52,18 @@ async function startServer() {
     const apiKey = process.env.GEMINI_API_KEY;
     let budget;
     let source = "bl-ai-smart-engine";
+    let debug: string | undefined;
 
-    if (apiKey) {
+    if (!apiKey) {
+      debug = "GEMINI_API_KEY não está definida nas variáveis de ambiente.";
+      console.error(debug);
+    } else {
       try {
         budget = await parseBudgetWithGemini(text, category, clientName, companyName, apiKey);
         source = "gemini";
       } catch (aiError) {
-        console.error("Gemini parse failed, falling back to regex engine:", aiError);
+        debug = aiError instanceof Error ? aiError.message : String(aiError);
+        console.error("Gemini parse failed, falling back to regex engine:", debug);
       }
     }
 
@@ -66,7 +71,7 @@ async function startServer() {
       budget = smartParseBudget(text, category, clientName, companyName);
     }
 
-    res.json({ budget, source });
+    res.json({ budget, source, debug });
   });
 
   // Vite middleware for development
