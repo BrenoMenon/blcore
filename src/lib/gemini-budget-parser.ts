@@ -9,8 +9,20 @@ import {
   reconcileBudgetWithSource,
 } from "./budget-parser";
 
-const GEMINI_MODEL = "gemini-3.8-flash";
-const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+// Try these models in order. If one is overloaded (503) or rate-limited
+// (429), we immediately move to the next instead of waiting — different
+// models get hit by traffic spikes at different times, so this keeps the
+// feature working even when any single model is temporarily saturated.
+const GEMINI_MODEL_CHAIN = [
+  "gemini-3.6-flash",
+  "gemini-3.7-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite",
+];
+
+function endpointFor(model: string): string {
+  return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+}
 
 const BUDGET_RESPONSE_SCHEMA = {
   type: "OBJECT",
@@ -271,26 +283,27 @@ function toParsedItem(
 }
 
 const RETRYABLE_STATUS = new Set([429, 500, 503, 504]);
-// Netlify's default function timeout is 10s on most plans, so we keep
-// retries + backoff conservative to stay well inside that window.
-const MAX_ATTEMPTS = 2;
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function callGeminiWithRetry(
+async function callGeminiWithFallback(
   prompt: string,
   apiKey: string,
-): Promise<Response> {
+): Promise<{ response: Response; modelUsed: string }> {
   let lastError: Error | null = null;
+  let lastResponse: Response | null = null;
+  let lastModel = GEMINI_MODEL_CHAIN[0];
 
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+  // Netlify's default function timeout is 10s on most plans, so we move
+  // straight to the next model on failure instead of adding backoff
+  // delays — trying 4 models back-to-back is faster than retrying one
+  // model 4 times, and it survives a single model being overloaded.
+  for (const model of GEMINI_MODEL_CHAIN) {
+    lastModel = model;
+
     let response: Response;
 
     try {
       response = await fetch(
-        `${GEMINI_ENDPOINT}?key=${apiKey}`,
+        `${endpointFor(model)}?key=${apiKey}`,
         {
           method: "POST",
           headers: {
@@ -317,39 +330,34 @@ async function callGeminiWithRetry(
         },
       );
     } catch (networkError) {
-      // Network-level failure (timeout, DNS, etc). Worth retrying too.
       lastError =
         networkError instanceof Error
           ? networkError
           : new Error(String(networkError));
-
-      if (attempt < MAX_ATTEMPTS) {
-        await sleep(300);
-        continue;
-      }
-
-      throw lastError;
-    }
-
-    if (response.ok) {
-      return response;
-    }
-
-    // Model overloaded / rate limited / transient server error: retry
-    // once with a short backoff instead of giving up on the very first
-    // hiccup. Kept brief to respect Netlify's function timeout.
-    if (
-      RETRYABLE_STATUS.has(response.status) &&
-      attempt < MAX_ATTEMPTS
-    ) {
-      await sleep(300);
       continue;
     }
 
-    return response;
+    if (response.ok) {
+      return { response, modelUsed: model };
+    }
+
+    lastResponse = response;
+
+    // Overloaded / rate limited / transient server error: try the next
+    // model in the chain immediately.
+    if (RETRYABLE_STATUS.has(response.status)) {
+      continue;
+    }
+
+    // Non-retryable error (bad request, invalid key, etc) — no point
+    // trying other models, they'll fail the same way.
+    return { response, modelUsed: model };
   }
 
-  // Unreachable in practice, but keeps TypeScript happy.
+  if (lastResponse) {
+    return { response: lastResponse, modelUsed: lastModel };
+  }
+
   throw (
     lastError ||
     new Error("Falha desconhecida ao chamar o Gemini")
@@ -376,7 +384,7 @@ export async function parseBudgetWithGemini(
     companyNameSuggestion,
   );
 
-  const response = await callGeminiWithRetry(
+  const { response, modelUsed } = await callGeminiWithFallback(
     prompt,
     apiKey,
   );
@@ -388,7 +396,7 @@ export async function parseBudgetWithGemini(
         .catch(() => "");
 
     throw new Error(
-      `Gemini API respondeu ${response.status} após ${MAX_ATTEMPTS} tentativas: ${errorBody.slice(
+      `Gemini API respondeu ${response.status} em todos os ${GEMINI_MODEL_CHAIN.length} modelos testados (último: ${modelUsed}): ${errorBody.slice(
         0,
         200,
       )}`,
