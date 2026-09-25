@@ -65,6 +65,8 @@ export function QuoteInputSection({
 
     try {
       let budget: any = null;
+      let usedAI = false;
+      let fallbackReason = "";
 
       // 1. Attempt server-side Gemini route if running full-stack
       try {
@@ -84,16 +86,30 @@ export function QuoteInputSection({
             const data = await res.json();
             if (data?.budget) {
               budget = data.budget;
+              usedAI = data.source === "gemini";
+              if (!usedAI && data.debug) {
+                fallbackReason = data.debug;
+              }
             }
+          } else {
+            fallbackReason = `Resposta do servidor não era JSON (status ${res.status}).`;
           }
+        } else {
+          fallbackReason = `Servidor respondeu com erro (status ${res.status}).`;
         }
-      } catch {
-        // Network error, offline, or static hosting (Netlify) -> fallback to client-side smart parser below
+      } catch (networkErr: any) {
+        fallbackReason = `Falha de rede ao chamar o servidor: ${networkErr?.message || networkErr}`;
+        console.error("Erro ao chamar /api/gemini/organize-budget:", networkErr);
       }
 
       // 2. If API didn't return a budget (e.g. 404 on Netlify static host or API offline), use instant client-side smart parser
       if (!budget) {
+        if (!fallbackReason) fallbackReason = "Servidor não retornou orçamento.";
         budget = smartParseBudget(rawInput, companyCategory, undefined, companyName);
+      }
+
+      if (fallbackReason) {
+        console.warn("[BL Core] IA não foi usada, motivo:", fallbackReason);
       }
 
       // Ensure full quote structure with unique ID and current date
@@ -140,11 +156,18 @@ export function QuoteInputSection({
       };
 
       toast.dismiss(toastId);
-      toast.success("Orçamento estruturado com sucesso pela IA!", {
-        description: completeQuote.client.name
-          ? `Cliente identificado: ${completeQuote.client.name}`
-          : "Revise os campos e complete os dados desejados.",
-      });
+      if (usedAI) {
+        toast.success("Orçamento organizado com IA (Gemini)!", {
+          description: completeQuote.client.name
+            ? `Cliente identificado: ${completeQuote.client.name}`
+            : "Revise os campos e complete os dados desejados.",
+        });
+      } else {
+        toast.warning("Organizado com o mecanismo local (sem IA)", {
+          description: fallbackReason || "Configure a GEMINI_API_KEY para usar a IA. Revise os campos com atenção.",
+          duration: 8000,
+        });
+      }
 
       onOrganized(completeQuote);
     } catch (err: any) {
