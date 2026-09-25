@@ -19,13 +19,18 @@ export default async (req: Request) => {
     const apiKey = process.env.GEMINI_API_KEY;
     let budget;
     let source = "bl-ai-smart-engine";
+    let debug: string | undefined;
 
-    if (apiKey) {
+    if (!apiKey) {
+      debug = "GEMINI_API_KEY não está definida nas variáveis de ambiente da Netlify.";
+      console.error(debug);
+    } else {
       try {
         budget = await parseBudgetWithGemini(text, category, clientName, companyName, apiKey);
         source = "gemini";
       } catch (aiError) {
-        console.error("Gemini parse failed, falling back to regex engine:", aiError);
+        debug = aiError instanceof Error ? aiError.message : String(aiError);
+        console.error("Gemini parse failed, falling back to regex engine:", debug);
       }
     }
 
@@ -33,7 +38,7 @@ export default async (req: Request) => {
       budget = smartParseBudget(text, category, clientName, companyName);
     }
 
-    return new Response(JSON.stringify({ budget, source }), {
+    return new Response(JSON.stringify({ budget, source, debug }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
