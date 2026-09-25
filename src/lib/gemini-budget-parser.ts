@@ -270,6 +270,92 @@ function toParsedItem(
   };
 }
 
+const RETRYABLE_STATUS = new Set([429, 500, 503, 504]);
+// Netlify's default function timeout is 10s on most plans, so we keep
+// retries + backoff conservative to stay well inside that window.
+const MAX_ATTEMPTS = 2;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function callGeminiWithRetry(
+  prompt: string,
+  apiKey: string,
+): Promise<Response> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    let response: Response;
+
+    try {
+      response = await fetch(
+        `${GEMINI_ENDPOINT}?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            contents: [
+              {
+                role: "user",
+                parts: [
+                  {
+                    text: prompt,
+                  },
+                ],
+              },
+            ],
+            generationConfig: {
+              responseMimeType: "application/json",
+              responseSchema:
+                BUDGET_RESPONSE_SCHEMA,
+              temperature: 0,
+            },
+          }),
+        },
+      );
+    } catch (networkError) {
+      // Network-level failure (timeout, DNS, etc). Worth retrying too.
+      lastError =
+        networkError instanceof Error
+          ? networkError
+          : new Error(String(networkError));
+
+      if (attempt < MAX_ATTEMPTS) {
+        await sleep(300);
+        continue;
+      }
+
+      throw lastError;
+    }
+
+    if (response.ok) {
+      return response;
+    }
+
+    // Model overloaded / rate limited / transient server error: retry
+    // once with a short backoff instead of giving up on the very first
+    // hiccup. Kept brief to respect Netlify's function timeout.
+    if (
+      RETRYABLE_STATUS.has(response.status) &&
+      attempt < MAX_ATTEMPTS
+    ) {
+      await sleep(300);
+      continue;
+    }
+
+    return response;
+  }
+
+  // Unreachable in practice, but keeps TypeScript happy.
+  throw (
+    lastError ||
+    new Error("Falha desconhecida ao chamar o Gemini")
+  );
+}
+
 export async function parseBudgetWithGemini(
   rawText: string,
   category: string | undefined,
@@ -290,32 +376,9 @@ export async function parseBudgetWithGemini(
     companyNameSuggestion,
   );
 
-  const response = await fetch(
-    `${GEMINI_ENDPOINT}?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [
-              {
-                text: prompt,
-              },
-            ],
-          },
-        ],
-        generationConfig: {
-          responseMimeType: "application/json",
-          responseSchema:
-            BUDGET_RESPONSE_SCHEMA,
-          temperature: 0,
-        },
-      }),
-    },
+  const response = await callGeminiWithRetry(
+    prompt,
+    apiKey,
   );
 
   if (!response.ok) {
@@ -325,7 +388,7 @@ export async function parseBudgetWithGemini(
         .catch(() => "");
 
     throw new Error(
-      `Gemini API respondeu ${response.status}: ${errorBody.slice(
+      `Gemini API respondeu ${response.status} após ${MAX_ATTEMPTS} tentativas: ${errorBody.slice(
         0,
         200,
       )}`,
