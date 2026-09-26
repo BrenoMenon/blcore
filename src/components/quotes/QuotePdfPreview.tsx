@@ -266,14 +266,29 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
 
     // Slice the tall canvas into A4 pages so nothing is cropped or blown up
     const pxPerMm = canvas.width / pageWidth;
-    const pageHeightPx = Math.floor(pageHeight * pxPerMm);
-    const totalPages = Math.max(1, Math.ceil(canvas.height / pageHeightPx));
+        const pageHeightPx = Math.floor(pageHeight * pxPerMm);
+
+    // The clone has a forced minHeight (1123px) plus rounding from the
+    // 2x render scale, which regularly leaves a sliver of a few px of
+    // blank space past the last real content — just enough to round up
+    // to an extra, essentially blank, page. Anything under 2% of a full
+    // page's height is treated as that rounding slack and dropped
+    // instead of becoming its own page.
+    const MIN_MEANINGFUL_SLICE_PX = pageHeightPx * 0.02;
+    const contentHeight =
+      canvas.height % pageHeightPx !== 0 &&
+      canvas.height % pageHeightPx < MIN_MEANINGFUL_SLICE_PX
+        ? canvas.height - (canvas.height % pageHeightPx)
+        : canvas.height;
+
+    const totalPages = Math.max(1, Math.ceil(contentHeight / pageHeightPx));
 
     for (let page = 0; page < totalPages; page++) {
       const sliceTop = page * pageHeightPx;
-      const sliceHeight = Math.min(pageHeightPx, canvas.height - sliceTop);
+      const sliceHeight = Math.min(pageHeightPx, contentHeight - sliceTop);
 
       const pageCanvas = document.createElement("canvas");
+
       pageCanvas.width = canvas.width;
       pageCanvas.height = sliceHeight;
 
