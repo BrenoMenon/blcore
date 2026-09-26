@@ -197,6 +197,32 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
         windowHeight: clone.scrollHeight,
         imageTimeout: 8000,
         onclone: (clonedDoc) => {
+          // Tailwind v4 compiles its color palette (including the
+          // slate-* utilities used throughout this card) to oklch()/
+          // color-mix() values. html2canvas can't reliably rasterize
+          // those, so without this override every slate-colored
+          // background, border and divider silently disappears in the
+          // exported PDF/image, leaving only the plain inline-styled
+          // brand colors. This stylesheet forces safe, universally
+          // supported hex equivalents, scoped to the print clone only.
+          const colorFix = clonedDoc.createElement("style");
+          colorFix.textContent = `
+            #quote-pdf-render-clone .bg-slate-50 { background-color: #f8fafc !important; }
+            #quote-pdf-render-clone .bg-slate-50\\/50 { background-color: rgba(248,250,252,0.5) !important; }
+            #quote-pdf-render-clone .bg-slate-50\\/60 { background-color: rgba(248,250,252,0.6) !important; }
+            #quote-pdf-render-clone .bg-slate-50\\/70 { background-color: rgba(248,250,252,0.7) !important; }
+            #quote-pdf-render-clone .bg-white { background-color: #ffffff !important; }
+            #quote-pdf-render-clone .border-slate-200 { border-color: #e2e8f0 !important; }
+            #quote-pdf-render-clone .divide-slate-100 > :not([hidden]) ~ :not([hidden]) { border-color: #f1f5f9 !important; }
+            #quote-pdf-render-clone .text-slate-400 { color: #94a3b8 !important; }
+            #quote-pdf-render-clone .text-slate-500 { color: #64748b !important; }
+            #quote-pdf-render-clone .text-slate-600 { color: #475569 !important; }
+            #quote-pdf-render-clone .text-slate-700 { color: #334155 !important; }
+            #quote-pdf-render-clone .text-slate-800 { color: #1e293b !important; }
+            #quote-pdf-render-clone .text-slate-900 { color: #0f172a !important; }
+          `;
+          clonedDoc.head.appendChild(colorFix);
+
           const el = clonedDoc.getElementById("quote-pdf-render-clone");
           if (el) {
             el.style.transform = "none";
