@@ -152,6 +152,23 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
       throw new Error("Elemento do orçamento não encontrado.");
     }
 
+    // Wait for the web font (Inter) to finish loading and for the browser
+    // to finish laying out/painting the current quote's data before we
+    // snapshot it. Without this, the very first export right after a
+    // quote is created or opened can capture a half-rendered frame
+    // (fallback font metrics, stale layout) — which is exactly why it
+    // used to take a second click/tap to come out right.
+    if (typeof document !== "undefined" && "fonts" in document) {
+      try {
+        await (document as any).fonts.ready;
+      } catch {
+        // ignore - proceed anyway
+      }
+    }
+    await new Promise((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(resolve)),
+    );
+
     await prepareImagesForCanvas();
 
     const element = pdfRef.current;
@@ -266,7 +283,7 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
 
     // Slice the tall canvas into A4 pages so nothing is cropped or blown up
     const pxPerMm = canvas.width / pageWidth;
-        const pageHeightPx = Math.floor(pageHeight * pxPerMm);
+    const pageHeightPx = Math.floor(pageHeight * pxPerMm);
 
     // The clone has a forced minHeight (1123px) plus rounding from the
     // 2x render scale, which regularly leaves a sliver of a few px of
@@ -288,7 +305,6 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
       const sliceHeight = Math.min(pageHeightPx, contentHeight - sliceTop);
 
       const pageCanvas = document.createElement("canvas");
-
       pageCanvas.width = canvas.width;
       pageCanvas.height = sliceHeight;
 
@@ -460,8 +476,6 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
         quote.paymentTerms ? `💳 *Condições:* ${quote.paymentTerms}` : "",
         quote.validityDays ? `📅 *Validade:* Até ${validityDate}` : "",
         quote.notes ? `📝 *Observação:* ${quote.notes}` : "",
-        ``,
-        `_O arquivo PDF oficial foi baixado no seu aparelho e pode ser anexado aqui nesta conversa._`,
       ].filter(Boolean);
 
       const message = encodeURIComponent(lines.join("\n"));
@@ -749,8 +763,8 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
                     </h3>
                     <div className="space-y-1.5 text-xs">
                       {quote.categorySpecificFields.map((field, idx) => (
-                        <div key={idx} className="flex justify-between items-center text-slate-700">
-                          <span className="font-semibold text-slate-900">{field.label}:</span>
+                        <div key={idx} className="flex justify-between items-start gap-2 text-slate-700">
+                          <span className="font-semibold text-slate-900 shrink-0">{field.label}:</span>
                           <span className="font-medium text-slate-800 text-right">{field.value || "—"}</span>
                         </div>
                       ))}
