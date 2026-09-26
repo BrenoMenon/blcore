@@ -397,7 +397,7 @@ function QuotesPage() {
 
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {history.map((item) => (
-                  <Card key={item.id} className="bl-glass border-border hover:border-primary/40 transition-all flex flex-col justify-between">
+                  <Card key={item.id} className="bl-glass border-border hover:border-primary/40 transition-all flex flex-col justify-between min-w-0 overflow-hidden">
                     <CardHeader className="pb-2">
                       <div className="flex items-start justify-between gap-2">
                         <div>
