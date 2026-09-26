@@ -790,27 +790,44 @@ export function reconcileBudgetWithSource(
             ? budget.items
             : explicit.items;
 
-  const dynamicFields = [
-    ...(Array.isArray(
-      budget.categorySpecificFields,
-    )
-      ? budget.categorySpecificFields
-      : []),
+  // Merge Gemini's fields with the regex engine's, but dedupe by KEY
+  // alone (not key+value) and prefer Gemini's version of each key. Two
+  // near-identical values for the same field (e.g. "Veículo: Honda
+  // Civic 2019" from Gemini vs "Veículo: um Honda Civic 2019" from the
+  // regex engine) must collapse into one line, not show both.
+  const dynamicFieldsByKey = new Map<
+    string,
+    CategorySpecificField
+  >();
 
-    ...explicit.categorySpecificFields,
-  ].filter(
-    (field, index, arr) => {
-      const key =
-        `${field.key}:${field.value}`;
-
-      return (
-        arr.findIndex(
-          (x) =>
-            `${x.key}:${x.value}` ===
-            key,
-        ) === index
+  for (const field of Array.isArray(
+    budget.categorySpecificFields,
+  )
+    ? budget.categorySpecificFields
+    : []) {
+    if (field?.key && field?.value) {
+      dynamicFieldsByKey.set(
+        field.key,
+        field,
       );
-    },
+    }
+  }
+
+  for (const field of explicit.categorySpecificFields) {
+    if (
+      field?.key &&
+      field?.value &&
+      !dynamicFieldsByKey.has(field.key)
+    ) {
+      dynamicFieldsByKey.set(
+        field.key,
+        field,
+      );
+    }
+  }
+
+  const dynamicFields = Array.from(
+    dynamicFieldsByKey.values(),
   );
 
   const finalItemsSum =
