@@ -790,12 +790,21 @@ export function reconcileBudgetWithSource(
             ? budget.items
             : explicit.items;
 
-  // Merge Gemini's fields with the regex engine's, but dedupe by KEY
-  // alone (not key+value) and prefer Gemini's version of each key. Two
-  // near-identical values for the same field (e.g. "Veículo: Honda
-  // Civic 2019" from Gemini vs "Veículo: um Honda Civic 2019" from the
-  // regex engine) must collapse into one line, not show both.
-  const dynamicFieldsByKey = new Map<
+  // Merge Gemini's fields with the regex engine's, deduped by the
+  // LABEL text (normalized), not the internal "key". Gemini invents its
+  // own key per field (e.g. "veiculo", "car_model") while the regex
+  // engine always uses fixed keys ("vehicle", "plate", "problem") — so
+  // two fields that are clearly the same thing to a human ("Veículo")
+  // could carry different keys and slip past a key-only dedupe. The
+  // label is what's actually shown on the document, so that's what must
+  // never repeat.
+  const normalizeLabel = (label: string): string =>
+    label
+      .trim()
+      .toLocaleLowerCase("pt-BR")
+      .replace(/[:\s]+$/, "");
+
+  const dynamicFieldsByLabel = new Map<
     string,
     CategorySpecificField
   >();
@@ -805,9 +814,9 @@ export function reconcileBudgetWithSource(
   )
     ? budget.categorySpecificFields
     : []) {
-    if (field?.key && field?.value) {
-      dynamicFieldsByKey.set(
-        field.key,
+    if (field?.label && field?.value) {
+      dynamicFieldsByLabel.set(
+        normalizeLabel(field.label),
         field,
       );
     }
@@ -815,19 +824,21 @@ export function reconcileBudgetWithSource(
 
   for (const field of explicit.categorySpecificFields) {
     if (
-      field?.key &&
+      field?.label &&
       field?.value &&
-      !dynamicFieldsByKey.has(field.key)
+      !dynamicFieldsByLabel.has(
+        normalizeLabel(field.label),
+      )
     ) {
-      dynamicFieldsByKey.set(
-        field.key,
+      dynamicFieldsByLabel.set(
+        normalizeLabel(field.label),
         field,
       );
     }
   }
 
   const dynamicFields = Array.from(
-    dynamicFieldsByKey.values(),
+    dynamicFieldsByLabel.values(),
   );
 
   const finalItemsSum =
