@@ -33,22 +33,30 @@ export const Route = createFileRoute("/_authenticated/quotes")({
   component: QuotesPage,
 });
 
-const HISTORY_STORAGE_KEY = "blcore_quotes_history";
+// IMPORTANT: the history key must be scoped per logged-in user. A bare
+// "blcore_quotes_history" key is shared by EVERY account that ever opens
+// this app in the same browser — that leaked one company's saved quotes
+// (client names, prices, budgets) into every other account on the same
+// device. Each user's history now lives under its own key, and a legacy
+// unscoped blob (from before this fix) is never read again.
+function historyStorageKey(userId: string): string {
+  return `blcore_quotes_history_${userId}`;
+}
 
-function getStoredHistory(): QuoteData[] {
-  if (typeof window === "undefined") return [];
+function getStoredHistory(userId: string): QuoteData[] {
+  if (typeof window === "undefined" || !userId) return [];
   try {
-    const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
+    const raw = localStorage.getItem(historyStorageKey(userId));
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
   }
 }
 
-function saveHistoryToStorage(history: QuoteData[]) {
-  if (typeof window === "undefined") return;
+function saveHistoryToStorage(userId: string, history: QuoteData[]) {
+  if (typeof window === "undefined" || !userId) return;
   try {
-    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
+    localStorage.setItem(historyStorageKey(userId), JSON.stringify(history));
   } catch {
     // ignore
   }
@@ -65,10 +73,11 @@ function QuotesPage() {
   const [currentQuote, setCurrentQuote] = useState<QuoteData | null>(null);
   const [history, setHistory] = useState<QuoteData[]>([]);
 
-  // Load history on mount
+  // Load history whenever the logged-in user changes (covers switching
+  // accounts without a full page reload too, not just initial mount).
   useEffect(() => {
-    setHistory(getStoredHistory());
-  }, []);
+    setHistory(getStoredHistory(userId));
+  }, [userId]);
 
   // Fetch company profile & settings from Supabase
   const { data: companyData, isLoading: loadingCompany } = useQuery({
@@ -223,7 +232,7 @@ function QuotesPage() {
       } else {
         updated = [savedQuote, ...prev];
       }
-      saveHistoryToStorage(updated);
+      saveHistoryToStorage(userId, updated);
       return updated;
     });
   }
@@ -231,7 +240,7 @@ function QuotesPage() {
   function handleDeleteFromHistory(id: string) {
     setHistory((prev) => {
       const updated = prev.filter((q) => q.id !== id);
-      saveHistoryToStorage(updated);
+      saveHistoryToStorage(userId, updated);
       return updated;
     });
     toast.success("Orçamento removido do histórico.");
