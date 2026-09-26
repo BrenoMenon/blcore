@@ -428,9 +428,9 @@ function QuotesPage() {
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-1 text-[11px] text-muted-foreground line-clamp-1">
-                        <span>{item.items.length} {item.items.length === 1 ? "item" : "itens"}:</span>
-                        <span className="truncate italic">
+                      <div className="flex items-center gap-1 text-[11px] text-muted-foreground min-w-0">
+                        <span className="shrink-0">{item.items.length} {item.items.length === 1 ? "item" : "itens"}:</span>
+                        <span className="truncate italic min-w-0">
                           {item.items.map((i) => i.name).join(", ")}
                         </span>
                       </div>
