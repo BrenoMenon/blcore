@@ -700,11 +700,6 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
                     <p>
                       <span className="font-semibold text-slate-800">Emissão:</span> {emissionDate}
                     </p>
-                    {quote.validityDays ? (
-                      <p>
-                        <span className="font-semibold text-slate-800">Validade:</span> {validityDate}
-                      </p>
-                    ) : null}
                   </div>
                 </div>
               </div>
