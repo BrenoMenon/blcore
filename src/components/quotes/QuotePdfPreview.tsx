@@ -66,6 +66,23 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
     return () => window.removeEventListener("resize", updateScale);
   }, []);
 
+  // Warm up the Inter font weights this document uses the moment the
+  // preview mounts — well before the user has a chance to tap "Baixar
+  // PDF"/"Enviar no Zap". This is what actually prevents the first-click
+  // export from ever being captured with fallback font metrics; the
+  // document.fonts.ready wait inside generatePdf() is just a safety net
+  // for the (now rare) case someone taps immediately on a slow device.
+  useEffect(() => {
+    if (typeof document === "undefined" || !("fonts" in document)) return;
+    const weights = ["400 12px Inter", "500 12px Inter", "600 12px Inter", "700 20px Inter", "800 20px Inter"];
+    weights.forEach((font) => {
+      (document as any).fonts.load(font).catch(() => {
+        // ignore - the fonts.ready wait in generatePdf() still covers this
+      });
+    });
+  }, []);
+
+
   // Format dates
   const emissionDate = new Date(quote.createdAt).toLocaleDateString("pt-BR", {
     day: "2-digit",
@@ -165,11 +182,19 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
         // ignore - proceed anyway
       }
     }
-    await new Promise((resolve) =>
+
+      await new Promise((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(resolve)),
     );
 
+    // Small fixed safety margin on top of the frame waits above. Font
+    // swaps and final layout settling can land a few ms after the second
+    // animation frame fires on slower/older phones — this closes that
+    // last gap so the very first tap is reliably identical to the second.
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
     await prepareImagesForCanvas();
+
 
     const element = pdfRef.current;
 
