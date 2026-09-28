@@ -39,6 +39,29 @@ function WhatsAppIcon({ className = "h-4 w-4" }: { className?: string }) {
   );
 }
 
+// Collects every readable CSS rule currently applied to the live page as
+// plain text. html2canvas renders from a cloned iframe that has to
+// re-download the site's <link rel="stylesheet"> on its own; when that
+// download hasn't finished (cold cache, iOS Safari), the export comes out
+// with NO Tailwind styles at all. Injecting the CSS text directly makes
+// the clone self-contained, so it never depends on that race.
+function collectDocumentCss(): string {
+  let css = "";
+  for (const sheet of Array.from(document.styleSheets)) {
+    try {
+      const rules = sheet.cssRules;
+      if (!rules) continue;
+      for (const rule of Array.from(rules)) {
+        css += rule.cssText + "\n";
+      }
+    } catch {
+      // Cross-origin stylesheet (e.g. Google Fonts): rules are not
+      // readable from JS. Safe to skip; the app's own CSS is same-origin.
+    }
+  }
+  return css;
+}
+
 export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPreviewProps) {
   const pdfRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -81,7 +104,6 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
       });
     });
   }, []);
-
 
   // Format dates
   const emissionDate = new Date(quote.createdAt).toLocaleDateString("pt-BR", {
@@ -182,8 +204,7 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
         // ignore - proceed anyway
       }
     }
-
-      await new Promise((resolve) =>
+    await new Promise((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(resolve)),
     );
 
@@ -194,7 +215,6 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
     await new Promise((resolve) => setTimeout(resolve, 120));
 
     await prepareImagesForCanvas();
-
 
     const element = pdfRef.current;
 
@@ -225,6 +245,8 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
     try {
       await normalizeCloneImages(clone);
 
+      const appCss = collectDocumentCss();
+
       canvas = await html2canvas(clone, {
         scale: 2,
         useCORS: true,
@@ -238,7 +260,18 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
         windowWidth: 794,
         windowHeight: clone.scrollHeight,
         imageTimeout: 8000,
-        onclone: (clonedDoc) => {
+        onclone: async (clonedDoc) => {
+          // Put the app's full CSS directly into the cloned document so
+          // the export never depends on the iframe finishing its own
+          // stylesheet download (the cause of the intermittent
+          // "PDF without CSS" on the first tap).
+          if (appCss) {
+            const inlinedCss = clonedDoc.createElement("style");
+            inlinedCss.setAttribute("data-inlined-app-css", "true");
+            inlinedCss.textContent = appCss;
+            clonedDoc.head.insertBefore(inlinedCss, clonedDoc.head.firstChild);
+          }
+
           // Tailwind v4 compiles its color palette (including the
           // slate-* utilities used throughout this card) to oklch()/
           // color-mix() values. html2canvas can't reliably rasterize
@@ -284,6 +317,19 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
           clonedDoc.documentElement.classList.remove("dark");
           clonedDoc.body.classList.remove("dark");
           clonedDoc.body.style.backgroundColor = "#ffffff";
+
+          // Do not let html2canvas take the picture until the styles are
+          // demonstrably applied. Without CSS the root has 0 padding; with
+          // it (p-10) it has 40px. Wait up to 3s for that to flip.
+          const cloneWin = clonedDoc.defaultView;
+          if (el && cloneWin) {
+            const deadline = Date.now() + 3000;
+            while (Date.now() < deadline) {
+              const padTop = parseFloat(cloneWin.getComputedStyle(el).paddingTop || "0");
+              if (padTop > 0) break;
+              await new Promise((resolve) => setTimeout(resolve, 50));
+            }
+          }
         },
       });
     } finally {
@@ -815,11 +861,13 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
                       >
                         <td className="py-3 px-3">
                           <p className="font-semibold text-slate-900">{item.name}</p>
-                          {item.description && (
-                            <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-                              {item.description}
-                            </p>
-                          )}
+                          {item.description &&
+                            item.description.trim().toLocaleLowerCase("pt-BR") !==
+                              item.name.trim().toLocaleLowerCase("pt-BR") && (
+                              <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                                {item.description}
+                              </p>
+                            )}
                         </td>
                         <td className="py-3 px-3 text-center font-medium text-slate-700">
                           {item.quantity}
