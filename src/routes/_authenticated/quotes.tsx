@@ -98,13 +98,16 @@ function QuotesPage() {
             .maybeSingle(),
         ]);
 
+                // CNPJ comes from Supabase only, scoped to this user_id — never
+        // from localStorage. A shared, unscoped localStorage key used to
+        // leak one account's CNPJ into every other account's quotes on
+        // the same device.
         const cnpj =
           (settings?.whatsapp_config as any)?.cnpj ||
           (settings as any)?.cnpj ||
           (profile as any)?.cnpj ||
-          localStorage.getItem(`blcore_cnpj_${userId}`) ||
-          localStorage.getItem("blcore_company_cnpj") ||
           "";
+
 
         const companyName =
           settings?.company_name || profile?.business_name || "BL Core Gestão";
@@ -127,12 +130,10 @@ function QuotesPage() {
           email: userEmailAuth,
         };
       } catch (err) {
-        console.error("Error loading company info for quotes:", err);
-        const fallbackCnpj =
-          localStorage.getItem(`blcore_cnpj_${userId}`) ||
-          localStorage.getItem("blcore_company_cnpj") ||
-          "";
+                console.error("Error loading company info for quotes:", err);
+        const fallbackCnpj = "";
         return {
+
           companyName: "BL Core Gestão",
           category: "Social Media",
           cnpj: fallbackCnpj,
@@ -149,15 +150,15 @@ function QuotesPage() {
   });
 
   // Base branding state - defaults category to Social Media
+    // Base branding state - defaults category to Social Media. CNPJ starts
+  // empty and is filled in from Supabase once companyData loads below —
+  // never from localStorage (see the leak note further down).
   const [branding, setBranding] = useState<CompanyBranding>({
     companyName: "BL Core Gestão",
     category: "Social Media",
-    cnpj:
-      (typeof window !== "undefined" &&
-        (localStorage.getItem(`blcore_cnpj_${userId}`) ||
-          localStorage.getItem("blcore_company_cnpj"))) ||
-      "",
+    cnpj: "",
     email: userEmailAuth,
+
     logoUrl: "",
     phone: "",
     whatsapp: "",
@@ -200,14 +201,12 @@ function QuotesPage() {
 
   // When AI organizes the budget, move to review step
   function handleQuoteOrganized(quote: QuoteData) {
-    const activeCnpj =
+        const activeCnpj =
       quote.branding?.cnpj ||
       branding.cnpj ||
       companyData?.cnpj ||
-      (typeof window !== "undefined" &&
-        (localStorage.getItem(`blcore_cnpj_${userId}`) ||
-          localStorage.getItem("blcore_company_cnpj"))) ||
       "";
+
 
     const completeQuote: QuoteData = {
       ...quote,
