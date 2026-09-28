@@ -283,15 +283,20 @@ function SignupForm({ onDone }: { onDone: (type: "client" | "company") => void }
       toast.warning(t("Conta criada"), { description: t("Não conseguimos salvar a chave de recuperação agora. Configure em Ajustes.") });
     }
 
-    if (v.user_type === "company" && v.cnpj?.trim()) {
+        if (v.user_type === "company" && v.cnpj?.trim()) {
       try {
         const cleanCnpj = v.cnpj.trim();
-        localStorage.setItem("blcore_company_cnpj", cleanCnpj);
+        // CNPJ is persisted to Supabase only, scoped to this account's
+        // user_id. It used to also be cached in localStorage under a
+        // GLOBAL, unscoped key shared by every account on the same
+        // device/browser — meaning whichever business signed up last on
+        // a shared computer would leak its CNPJ into every other
+        // account's quotes. Never write that global key again.
         const userRes = await supabase.auth.getUser();
         const uid = userRes.data.user?.id || data.user?.id;
         if (uid) {
-          localStorage.setItem(`blcore_cnpj_${uid}`, cleanCnpj);
           await supabase.from("company_settings").upsert({
+
             user_id: uid,
             company_name: v.business_name || v.full_name,
             whatsapp_config: { cnpj: cleanCnpj },
