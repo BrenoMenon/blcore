@@ -49,12 +49,11 @@ function SettingsPage() {
   });
 
   useEffect(() => {
-        // CNPJ comes from Supabase only — never from localStorage. A shared,
-    // unscoped localStorage key used to leak one account's CNPJ into
-    // every other account opened on the same device.
     const savedCnpj =
       (data?.whatsapp_config as any)?.cnpj ||
       (data as any)?.cnpj ||
+      localStorage.getItem(`blcore_cnpj_${userId}`) ||
+      localStorage.getItem("blcore_company_cnpj") ||
       "";
 
     if (data) {
@@ -72,10 +71,16 @@ function SettingsPage() {
 
   const save = useMutation({
     mutationFn: async (v: Form) => {
-            const cleanCnpj = v.cnpj?.trim() || "";
+      const cleanCnpj = v.cnpj?.trim() || "";
+      if (cleanCnpj) {
+        localStorage.setItem(`blcore_cnpj_${userId}`, cleanCnpj);
+        localStorage.setItem("blcore_company_cnpj", cleanCnpj);
+      } else {
+        localStorage.removeItem(`blcore_cnpj_${userId}`);
+        localStorage.removeItem("blcore_company_cnpj");
+      }
 
-      const existingConfig
- = (data?.whatsapp_config as Record<string, any>) || {};
+      const existingConfig = (data?.whatsapp_config as Record<string, any>) || {};
       const updatedConfig = { ...existingConfig, cnpj: cleanCnpj };
 
       const { error } = await supabase.from("company_settings").upsert({
@@ -181,6 +186,7 @@ function SettingsPage() {
       <div className="mt-6">
         <RecoveryKeyCard email={email ?? ""} />
       </div>
+
 
       <div className="mt-6">
         <DeleteAccountCard />

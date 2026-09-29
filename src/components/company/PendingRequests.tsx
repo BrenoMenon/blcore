@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { fmtDateTime, fmtDate, currency } from "@/lib/format";
+import { fmtDateTime, currency } from "@/lib/format";
 import { toast } from "sonner";
 import { Check, X, BellRing } from "lucide-react";
 import { openWhatsApp } from "@/lib/whatsapp";
@@ -75,14 +75,10 @@ export function PendingRequests({ userId }: { userId: string }) {
       const row = (pending.data ?? []).find((r) => r.id === v.id);
       toast.success(v.accept ? t("Agendamento confirmado") : t("Solicitação recusada"));
       if (v.accept && row?.clientPhone) {
-        const isFlexibleSchedule = row.notes?.includes("[Data e horário a combinar]");
-        const isFlexibleTime = row.notes?.includes("[Horário a combinar]") || isFlexibleSchedule;
         const d = new Date(row.starts_at);
-        const dataStr = isFlexibleSchedule ? t("A combinar") : format(d, "dd/MM/yyyy", { locale: ptBR });
-        const horaStr = isFlexibleTime ? t("A combinar") : format(d, "HH:mm");
         const msg =
           `Olá, ${row.clientName}! Seu agendamento de ${row.services?.name ?? "serviço"} foi confirmado.\n` +
-          `Data: ${dataStr} — Horário: ${horaStr}\n` +
+          `Data: ${format(d, "dd/MM/yyyy", { locale: ptBR })} — Horário: ${format(d, "HH:mm")}\n` +
           `Local: ${companyName.data ?? "BL Core Gestão"}\n\nAté breve!`;
         openWhatsApp(row.clientPhone, msg);
       }
@@ -113,15 +109,7 @@ export function PendingRequests({ userId }: { userId: string }) {
             <div className="min-w-0">
               <p className="truncate font-semibold">{r.clientName}</p>
               <p className="truncate text-sm text-muted-foreground">
-                {r.services?.name ?? t("Serviço")} · {
-                  r.notes?.includes("[Data e horário a combinar]")
-                    ? t("Data e horário a combinar")
-                    : r.notes?.includes("[Horário a combinar]")
-                    ? `${fmtDate(r.starts_at)} · ${t("Horário a combinar")}`
-                    : r.notes?.includes("[Data a combinar")
-                    ? t("Data a combinar")
-                    : fmtDateTime(r.starts_at)
-                }
+                {r.services?.name ?? t("Serviço")} · {fmtDateTime(r.starts_at)}
                 {r.price != null ? ` · ${currency(Number(r.price))}` : ""}
               </p>
               {r.notes && <p className="truncate text-xs text-muted-foreground">{r.notes}</p>}
