@@ -236,7 +236,7 @@ function ClientDialog({ open, onOpenChange, editing }: { open: boolean; onOpenCh
       if (!editing && wa) {
         const company = settings.data?.company_name ?? t("nossa empresa");
         const msg =
-          `Olá ${result.name}! 👋\n\n` +
+          `Olá ${result.name}!\n\n` +
           `Você foi cadastrado(a) na plataforma BL Core como cliente da ${company}.\n\n` +
           `Na plataforma você pode ver seus horários, acompanhar seus atendimentos e também marcar consultas ou horários direto por lá, quando quiser.\n\n` +
           `Acesse agora: https://blcore.netlify.app\n\n` +

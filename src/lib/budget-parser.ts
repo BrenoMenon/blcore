@@ -35,160 +35,588 @@ export interface ParsedBudget {
   notes: string;
 }
 
-const STOP_AFTER_VALUE = /(?=\s*(?:;|\.|,\s*(?:com|sem|valor|pagamento|prazo|pendente|obs|observa)|$))/i;
+const MONEY_TOKEN = String.raw`(?:r\$\s*)?(\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?|\d+(?:,\d{1,2})?)(?=\s|reais?\b|$)`;
 
-function sentenceCase(value: string): string {
-  const clean = value.replace(/\s+/g, " ").replace(/^[\s,;:.-]+|[\s,;:.-]+$/g, "").trim();
-  if (!clean) return "";
-  return clean.charAt(0).toUpperCase() + clean.slice(1);
+function normalizeText(value: string): string {
+  return (value || "").replace(/\s+/g, " ").trim();
 }
 
-function parseBrazilianMoney(raw: string): number {
-  const normalized = raw.trim().replace(/\s/g, "");
+function cleanValue(value: string): string {
+  return normalizeText(value).replace(/^[\s,;:|.-]+|[\s,;|.-]+$/g, "").trim();
+}
+
+function sentenceCase(value: string): string {
+  const clean = cleanValue(value);
+  if (!clean) return "";
+  return clean.charAt(0).toLocaleUpperCase("pt-BR") + clean.slice(1);
+}
+
+export function parseBrazilianMoney(raw: string): number {
+  const normalized = normalizeText(raw).replace(/\s/g, "");
   if (!normalized) return 0;
+
   if (normalized.includes(",")) {
     return Number(normalized.replace(/\./g, "").replace(",", ".")) || 0;
   }
+
   const dots = normalized.split(".");
   if (dots.length > 1 && dots[dots.length - 1].length === 3) {
     return Number(normalized.replace(/\./g, "")) || 0;
   }
+
   return Number(normalized) || 0;
 }
 
 export function cleanClientName(raw: string): string {
-  if (!raw) return "";
-  const cleaned = raw
-    .replace(/^(?:(?:para\s+o|para\s+a|ao|à|do|da)?\s*(?:cliente|comprador|contratante|solicitante|paciente|aluno))\s*[:=–-]?\s*/i, "")
-    .replace(/^(?:nome(?:\s+do\s+cliente)?|em\s+nome\s+de)\s*[:=–-]?\s*/i, "")
+  const cleaned = cleanValue(raw)
+    .replace(/^(?:o|a)\s+/i, "")
     .replace(/^(?:sr\.?|sra\.?|senhor|senhora|dr\.?|dra\.?)\s+/i, "")
-    .replace(/\s*\([^)]*\)\s*$/, "")
-    .replace(/[,;:.].*$/, "")
-    .replace(/\s+/g, " ")
+    .replace(/^(?:cliente|nome\s+do\s+cliente)\s*(?:é|e|:|=)?\s*/i, "")
+    .replace(/[,;|].*$/, "")
     .trim();
 
-  if (!cleaned || /^(?:cria[cç][aã]o|servi[cç]o|valor|pagamento|prazo|pendente|liberad|depois|quando|or[cç]amento)\b/i.test(cleaned)) {
-    return "";
-  }
+  if (!cleaned) return "";
 
   return cleaned
-    .split(" ")
+    .split(/\s+/)
     .filter(Boolean)
     .map((word) => {
       const lower = word.toLocaleLowerCase("pt-BR");
-      return ["de", "da", "do", "dos", "das", "e"].includes(lower)
-        ? lower
-        : lower.charAt(0).toLocaleUpperCase("pt-BR") + lower.slice(1);
+
+      if (["de", "da", "do", "dos", "das", "e"].includes(lower)) {
+        return lower;
+      }
+
+      return lower.charAt(0).toLocaleUpperCase("pt-BR") + lower.slice(1);
     })
     .join(" ");
 }
 
 export function formatPhone(raw: string): string {
   const digits = raw.replace(/\D/g, "");
-  if (digits.length === 11) return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
-  if (digits.length === 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+
+  if (digits.length === 13 && digits.startsWith("55")) {
+    return formatPhone(digits.slice(2));
+  }
+
+  if (digits.length === 11) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  }
+
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+
   return "";
 }
 
 export function formatCpf(raw: string): string {
   const digits = raw.replace(/\D/g, "");
+
   if (digits.length !== 11) return "";
+
   return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
 }
 
 export function formatCnpj(raw: string): string {
   const digits = raw.replace(/\D/g, "");
+
   if (digits.length !== 14) return "";
+
   return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}`;
 }
 
 function extractDocument(text: string): string {
-  const cnpj = text.match(/(?:cnpj)\s*[:=]?\s*([0-9.\/-]{14,18})/i) ?? text.match(/\b(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})\b/);
-  if (cnpj?.[1]) return formatCnpj(cnpj[1]);
-  const cpf = text.match(/(?:cpf|documento|doc)\s*[:=]?\s*([0-9.-]{11,14})/i) ?? text.match(/\b(\d{3}\.\d{3}\.\d{3}-\d{2})\b/);
+  const labeledCnpj = text.match(
+    /(?:cnpj)\s*(?:é|e|:|=)?\s*((?:\d[\s.-]*){14,18})/i,
+  );
+
+  if (labeledCnpj?.[1]) {
+    const formatted = formatCnpj(labeledCnpj[1]);
+
+    if (formatted) return formatted;
+  }
+
+  const labeledCpf = text.match(
+    /(?:cpf|documento|doc)(?:\s+(?:dele|dela|do\s+cliente|da\s+cliente))?\s*(?:é|e|:|=)?\s*((?:\d[\s.-]*){11,14})/i,
+  );
+
+  if (labeledCpf?.[1]) {
+    const formatted = formatCpf(labeledCpf[1]);
+
+    if (formatted) return formatted;
+  }
+
+  const cnpj = text.match(/\b(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})\b/);
+
+  if (cnpj?.[1]) {
+    return formatCnpj(cnpj[1]);
+  }
+
+  const cpf = text.match(/\b(\d{3}\.\d{3}\.\d{3}-\d{2})\b/);
+
   return cpf?.[1] ? formatCpf(cpf[1]) : "";
 }
 
 function extractPhone(text: string, document: string): string {
-  const labeled = text.match(/(?:telefone|tel|celular|whats(?:app)?|zap|fone|contato)\s*[:=]?\s*(?:\+?55\s*)?(\(?\d{2}\)?\s*9?\d{4}[-.\s]?\d{4})/i);
-  const formatted = text.match(/\(?([1-9]{2})\)?\s*(9?\d{4})[-.\s](\d{4})/);
-  const candidate = labeled?.[1] ?? (formatted ? `${formatted[1]}${formatted[2]}${formatted[3]}` : "");
-  const digits = candidate.replace(/\D/g, "");
-  return digits && digits !== document.replace(/\D/g, "") ? formatPhone(digits) : "";
+  const labeled = text.match(
+    /(?:telefone|tel|celular|whats(?:app)?|zap|fone|contato)\s*(?:é|e|:|=)?\s*(?:\+?55\s*)?(\(?\d{2}\)?\s*9?\d{4}[-.\s]?\d{4})/i,
+  );
+
+  if (labeled?.[1]) {
+    return formatPhone(labeled[1]);
+  }
+
+  const formatted = text.match(
+    /(?:^|\s|\()([1-9]{2})\)?\s*(9\d{4}|\d{4})[-.\s](\d{4})(?=\s|$)/i,
+  );
+
+  if (formatted) {
+    const candidate = `${formatted[1]}${formatted[2]}${formatted[3]}`;
+
+    if (candidate !== document.replace(/\D/g, "")) {
+      return formatPhone(candidate);
+    }
+  }
+
+  return "";
 }
 
 function extractClient(text: string, suggestion?: string): string {
   if (suggestion) {
     const suggested = cleanClientName(suggestion);
+
     if (suggested) return suggested;
   }
+
   const patterns = [
-    /(?:para\s+(?:o|a)\s+cliente|cliente|nome\s+do\s+cliente|em\s+nome\s+de)\s*[:=]?\s*([\p{L}][\p{L}'-]*(?:\s+(?:de|da|do|dos|das|e|[\p{L}][\p{L}'-]*)){0,4})(?=\s*(?:\(|,|;|\.|cpf|cnpj|telefone|valor|pagamento|prazo|pendente|$))/iu,
-    /(?:para\s+(?:o|a))\s+([\p{L}][\p{L}'-]*(?:\s+[\p{L}][\p{L}'-]*){0,3})(?=\s*(?:\(|,|;|\.|cpf|cnpj|telefone|valor|pagamento|prazo|pendente|$))/iu,
+    /(?:cliente|nome\s+do\s+cliente)\s*(?:é|e|:|=)?\s*([\p{L}][\p{L}'-]*(?:\s+[\p{L}][\p{L}'-]*){0,5})(?=\s*(?:telefone|tel|celular|whats|zap|cpf|cnpj|endereço|endereco|mora|reside|veículo|veiculo|carro|valor|orçamento|orcamento|[,.;]|$))/iu,
+
+    /(?:é\s+o\s+cliente|o\s+cliente\s+é)\s+([\p{L}][\p{L}'-]*(?:\s+[\p{L}][\p{L}'-]*){0,5})(?=\s*(?:telefone|tel|cpf|cnpj|endereço|endereco|mora|reside|veículo|veiculo|carro|valor|orçamento|orcamento|$))/iu,
   ];
+
   for (const pattern of patterns) {
     const match = text.match(pattern);
-    const name = cleanClientName(match?.[1] ?? "");
+    const name = cleanClientName(match?.[1] || "");
+
     if (name) return name;
   }
+
+  const firstSegment = text
+    .split("|")[0]
+    .replace(/^orçamento\s*:?\s*/i, "")
+    .trim();
+
+  if (firstSegment && !/\d/.test(firstSegment)) {
+    const name = cleanClientName(firstSegment);
+
+    if (name && name.split(/\s+/).length <= 6) {
+      return name;
+    }
+  }
+
   return "";
 }
 
 function extractAddress(text: string): string {
-  const match = text.match(new RegExp(`(?:endereço|endereco|cidade|localização|localizacao|reside em|mora em)\\s*[:=]?\\s*([^,;]+?)${STOP_AFTER_VALUE.source}`, "i"));
-  return sentenceCase(match?.[1] ?? "");
+  const match = text.match(
+    /(?:endereço|endereco|cidade|localização|localizacao|reside\s+em|mora\s+em)\s*(?:é|e|:|=)?\s*(.+?)(?=\s+(?:é\s+o\s+orçamento|e\s+o\s+orçamento|é\s+orçamento|e\s+orçamento|orçamento\s+de|orcamento\s+de|criação\s+de|criacao\s+de|desenvolvimento\s+de|valor\s+total|total\b|pagamento|prazo\b|proposta\s+válida|proposta\s+valida|pendente|observação|observacao|$))/i,
+  );
+
+  return match?.[1] ? sentenceCase(match[1]) : "";
 }
 
-function extractService(text: string): string {
-  const explicit = text.match(/((?:cria[cç][aã]o|desenvolvimento|produ[cç][aã]o|instala[cç][aã]o|manuten[cç][aã]o|reforma|consultoria|gest[aã]o|design|servi[cç]o)\s+de\s+.+?)(?=\s+para\s+(?:o|a)\s+cliente|\s+cliente\s|\s*\(|\s*;|\s*,\s*(?:valor|pagamento|prazo|pendente)|\s+valor\s+total|$)/i);
-  if (explicit?.[1]) return sentenceCase(explicit[1]);
-  const known = text.match(/(?:landing\s+page|site\s+institucional|loja\s+virtual|e-commerce|identidade\s+visual|social\s+media|tr[aá]fego\s+pago)/i);
-  return known?.[0] ? sentenceCase(known[0]) : "Serviço Prestado";
+function extractEmail(text: string): string {
+  return (
+    text.match(/\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b/)?.[0] || ""
+  );
 }
 
 function extractTotal(text: string): number {
-  const prioritized = [
-    /valor\s+total\s+(?:de\s+)?r\$\s*([\d.]+(?:,\d{1,2})?)/i,
-    /total\s+(?:de\s+)?r\$\s*([\d.]+(?:,\d{1,2})?)/i,
-    /(?:valor|por)\s*[:=]?\s*r\$\s*([\d.]+(?:,\d{1,2})?)/i,
-    /r\$\s*([\d.]+(?:,\d{1,2})?)/i,
+  const patterns = [
+    new RegExp(
+      `valor\\s+total\\s*(?:é|e|de|:|=)?\\s*${MONEY_TOKEN}`,
+      "i",
+    ),
+
+    new RegExp(
+      `total\\s*(?:é|e|de|:|=)?\\s*${MONEY_TOKEN}`,
+      "i",
+    ),
+
+    new RegExp(
+      `\\br\\$\\s*([\\d.]+(?:,\\d{1,2})?)`,
+      "i",
+    ),
+
+    new RegExp(
+      `(?:valor|por)\\s*(?:é|e|:|=)?\\s*${MONEY_TOKEN}\\s*reais?`,
+      "i",
+    ),
   ];
-  for (const pattern of prioritized) {
+
+  for (const pattern of patterns) {
     const match = text.match(pattern);
-    if (match?.[1]) return parseBrazilianMoney(match[1]);
+
+    if (match?.[1]) {
+      return parseBrazilianMoney(match[1]);
+    }
   }
+
   return 0;
 }
 
 function extractPayment(text: string): string {
-  const payment = text.match(/(?:pagamento|forma\s+de\s+pagamento|condi[cç][aã]o(?:\s+de\s+pagamento)?)\s*[:=]?\s*(.+?)(?=\s*(?:;|\.(?:\s|$)|,\s*(?:prazo|pendente|obs|observa)|$))/i);
-  if (payment?.[1]) return sentenceCase(payment[1]);
-  const methods = text.match(/(?:pix|boleto|cart[aã]o|dinheiro)(?:\s*(?:,|ou|e)\s*(?:pix|boleto|cart[aã]o|dinheiro))+/i);
-  return methods?.[0] ? sentenceCase(methods[0]) : "";
+  const match = text.match(
+    /(?:forma\s+de\s+pagamento|pagamento|condição\s+de\s+pagamento|condicao\s+de\s+pagamento)\s*(?:é|e|:|=)?\s*(.+?)(?=\s+(?:prazo\b|proposta\s+válida|proposta\s+valida|validade\b|observação\b|observacao\b|pendente\b)|\s*[.;|]|$)/i,
+  );
+
+  return match?.[1] ? sentenceCase(match[1]) : "";
 }
 
 function extractDeadline(text: string): string {
-  const deadline = text.match(/(?:prazo(?:\s+cr[ií]tico)?|entrega|conclus[aã]o)\s*[:=]?\s*(?:para\s+)?(.+?)(?=\s*(?:;|\.|,\s*(?:pendente|obs|observa)|$))/i);
-  return sentenceCase(deadline?.[1] ?? "");
+  const match = text.match(
+    /(?:prazo\s+(?:de\s+entrega|de\s+execução|de\s+execucao)?|entrega|execução|execucao)\s*(?:é|e|:|=)?\s*(?:de|para)?\s*(.+?)(?=\s+(?:proposta\s+válida|proposta\s+valida|validade\b|observação\b|observacao\b|pendente\b|peças?\s+podem|pecas?\s+podem)|\s*[.;|]|$)/i,
+  );
+
+  return match?.[1] ? sentenceCase(match[1]) : "";
+}
+
+function extractValidityDays(text: string): number | null {
+  const match =
+    text.match(
+      /(?:proposta|orçamento|orcamento)\s+(?:é\s+)?válid[ao]\s+(?:por\s+)?(\d+)\s*dias?/i,
+    ) ||
+    text.match(
+      /validade\s+(?:da\s+proposta|do\s+orçamento|do\s+orcamento)\s*(?:é|de|:)?\s*(\d+)\s*dias?/i,
+    );
+
+  return match?.[1] ? Number(match[1]) : null;
 }
 
 function extractNotes(text: string): string {
   const notes: string[] = [];
-  const pending = text.match(/(?:pendente(?:s)?\s+de?|faltando|aguardando)\s+(.+?)(?=\s*(?:;|\.|$))/i);
-  if (pending?.[1]) notes.push(`Pendente de ${pending[1].trim()}`);
-  const observation = text.match(/(?:obs(?:erva[cç][aã]o|erva[cç][oõ]es)?|nota|aviso)\s*[:=]\s*(.+?)(?=\s*(?:;|\.|$))/i);
-  if (observation?.[1]) notes.push(observation[1].trim());
+
+  const pending = text.match(
+    /(?:pendente(?:s)?(?:\s+(?:de|que|ele|ela|o|a))?|faltando|aguardando)\s+(.+?)(?=\s*(?:;|\.|$))/i,
+  );
+
+  if (pending?.[1]) {
+    notes.push(`Pendente de ${cleanValue(pending[1])}`);
+  }
+
+  const priceChange = text.match(
+    /((?:peças?|pecas?|materiais?)\s+(?:podem|pode)\s+(?:mudar|sofrer\s+alteração|sofrer\s+alteracao)\s+(?:de\s+)?preço|(?:peças?|pecas?|materiais?)\s+podem\s+ter\s+preço\s+alterado)/i,
+  );
+
+  if (priceChange?.[1]) {
+    notes.push(sentenceCase(priceChange[1]));
+  }
+
+  const observation = text.match(
+    /(?:obs(?:ervação|ervacoes|erva[cç][aã]o|erva[cç][oõ]es)?|nota|aviso)\s*[:=]?\s*(.+?)(?=\s*(?:;|\.|$))/i,
+  );
+
+  if (observation?.[1]) {
+    notes.push(cleanValue(observation[1]));
+  }
+
   return notes.map(sentenceCase).filter(Boolean).join(". ");
 }
 
-function extractItemDescription(text: string): string {
-  const details: string[] = [];
-  const includes = text.match(/\(([^)]*(?:m[aã]o\s+de\s+obra|design|taxa|material|desconto)[^)]*)\)/i);
-  if (includes?.[1]) details.push(includes[1].trim());
-  if (/desconto\s+inclu[ií]do/i.test(text) && !details.some((value) => /desconto\s+inclu[ií]do/i.test(value))) {
-    details.push("Desconto incluído");
+function makeField(
+  key: string,
+  label: string,
+  value: string,
+): CategorySpecificField {
+  return {
+    key,
+    label,
+    value: cleanValue(value),
+  };
+}
+
+function extractContextFields(
+  text: string,
+): CategorySpecificField[] {
+  const fields: CategorySpecificField[] = [];
+  const normalized = normalizeText(text);
+
+  const vehicle = normalized.match(
+    /(?:veículo|veiculo|carro|moto|automóvel|automovel)\s*(?:é|e|:|=)?\s*(.+?)(?=\s+(?:placa|problema|defeito|batida|serviço|servico|valor|total|prazo|pagamento)|\s*[|.;]|$)/i,
+  );
+
+  const plate = normalized.match(
+    /(?:placa)\s*(?:é|e|:|=)?\s*([A-Z0-9-]{6,8})/i,
+  );
+
+  const problem = normalized.match(
+    /(?:problema|defeito|queixa|motivo|avaria)\s*(?:é|e|:|=)?\s*(.+?)(?=\s+(?:para-choque|parachoque|capô|capo|farol|paralama|pintura|funilaria|mão de obra|mao de obra|valor|total|prazo|pagamento)|\s*[|.;]|$)/i,
+  );
+
+  const impact = normalized.match(
+    /(?:batida|colisão|colisao)\s+(?:dianteira|traseira|lateral|frontal|leve|forte|.+?)(?=\s+(?:para-choque|parachoque|capô|capo|farol|paralama|pintura|funilaria|mão de obra|mao de obra|valor|total|prazo|pagamento)|\s*[|.;]|$)/i,
+  );
+
+  if (
+    normalized.includes("|") &&
+    /^orçamento\s*:/i.test(normalized)
+  ) {
+    const parts = normalized
+      .split("|")
+      .map(cleanValue)
+      .filter(Boolean);
+
+    const pipePlate =
+      parts[2] &&
+      /^[A-Z0-9-]{6,8}$/i.test(parts[2])
+        ? parts[2]
+        : "";
+
+    if (parts[1] && pipePlate) {
+      fields.push(
+        makeField(
+          "vehicle",
+          "Veículo",
+          parts[1],
+        ),
+      );
+    }
+
+    if (pipePlate) {
+      fields.push(
+        makeField(
+          "plate",
+          "Placa",
+          pipePlate.toUpperCase(),
+        ),
+      );
+    }
+
+    if (
+      parts[3] &&
+      pipePlate &&
+      !/\d/.test(parts[3])
+    ) {
+      fields.push(
+        makeField(
+          "problem",
+          "Problema",
+          parts[3],
+        ),
+      );
+    }
+  } else {
+    if (vehicle?.[1]) {
+      fields.push(
+        makeField(
+          "vehicle",
+          "Veículo",
+          vehicle[1],
+        ),
+      );
+    }
+
+    if (plate?.[1]) {
+      fields.push(
+        makeField(
+          "plate",
+          "Placa",
+          plate[1].toUpperCase(),
+        ),
+      );
+    }
+
+    if (problem?.[1]) {
+      fields.push(
+        makeField(
+          "problem",
+          "Problema",
+          problem[1],
+        ),
+      );
+    } else if (impact?.[0]) {
+      fields.push(
+        makeField(
+          "problem",
+          "Problema",
+          impact[0],
+        ),
+      );
+    }
   }
-  return details.map(sentenceCase).join("; ");
+
+  const deadline = extractDeadline(normalized);
+
+  if (deadline) {
+    fields.push(
+      makeField(
+        "deadline",
+        "Prazo",
+        deadline,
+      ),
+    );
+  }
+
+  return fields;
+}
+
+function createItem(
+  name: string,
+  price: number,
+  index: number,
+  description = "",
+): ParsedItem {
+  return {
+    id: `item-${Date.now()}-${index + 1}`,
+    name: sentenceCase(name),
+    description: cleanValue(description),
+    quantity: 1,
+    unitPrice: price,
+    totalPrice: price,
+  };
+}
+
+function extractPipeItems(
+  text: string,
+): ParsedItem[] {
+  if (!text.includes("|")) return [];
+
+  const parts = text
+    .split("|")
+    .map(cleanValue)
+    .filter(Boolean);
+
+  if (parts.length < 5) return [];
+
+  const items: ParsedItem[] = [];
+  let index = 0;
+
+  for (const part of parts.slice(1)) {
+    if (
+      /^(?:total|prazo|pagamento|forma de pagamento|observação|observacao)\b/i.test(
+        part,
+      )
+    ) {
+      break;
+    }
+
+    const match = part.match(
+      /^(.+?)\s+(?:r\$\s*)?(\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?|\d+(?:,\d{1,2})?)\s*(?:reais?)?$/i,
+    );
+
+    if (!match) continue;
+
+    const price = parseBrazilianMoney(match[2]);
+
+    if (
+      price <= 0 ||
+      (
+        price >= 1900 &&
+        price <= 2100 &&
+        /^\d{4}$/.test(match[2])
+      )
+    ) {
+      continue;
+    }
+
+    items.push(
+      createItem(
+        match[1],
+        price,
+        index++,
+      ),
+    );
+  }
+
+  return items;
+}
+
+function extractNaturalItems(
+  text: string,
+): ParsedItem[] {
+  const startMatch = text.match(
+    /(?:inclui|contém|contem|serviços?\s*:|servicos?\s*:)\s*(.+?)(?=\s+(?:total\s*(?:é|e|de|:|=)|valor\s+total|prazo\b))/i,
+  );
+
+  if (!startMatch?.[1]) return [];
+
+  const segment = startMatch[1]
+    .replace(
+      /\s+e\s+(?=[^\d]{1,60}(?:no\s+valor\s+de\s+|por\s+|r\$\s*)\d)/iu,
+      ", ",
+    )
+    .replace(/\.\s+.*$/, "")
+    .replace(/\.$/, "");
+
+  const items: ParsedItem[] = [];
+
+  const pieces = segment
+    .split(/,\s*|\s+;\s*/)
+    .map(cleanValue)
+    .filter(Boolean);
+
+  for (const piece of pieces) {
+    const match = piece.match(
+      /^(.+?)\s+(?:no\s+valor\s+de\s+|por\s+|r\$\s*)?(\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?|\d+(?:,\d{1,2})?)\s*(?:reais?)?$/i,
+    );
+
+    if (!match) continue;
+
+    const price = parseBrazilianMoney(match[2]);
+
+    if (price > 0) {
+      items.push(
+        createItem(
+          match[1],
+          price,
+          items.length,
+        ),
+      );
+    }
+  }
+
+  return items;
+}
+
+function extractItems(
+  text: string,
+  total: number,
+): ParsedItem[] {
+  const pipeItems = extractPipeItems(text);
+
+  if (pipeItems.length) {
+    return pipeItems;
+  }
+
+  const naturalItems = extractNaturalItems(text);
+
+  if (naturalItems.length) {
+    return naturalItems;
+  }
+
+  return [];
+}
+
+function reconcileItems(
+  items: ParsedItem[],
+  total: number,
+): ParsedItem[] {
+  if (!items.length) return [];
+
+  const sum = items.reduce(
+    (acc, item) => acc + item.totalPrice,
+    0,
+  );
+
+  if (
+    total > 0 &&
+    Math.abs(sum - total) > 0.01
+  ) {
+    return items;
+  }
+
+  return items;
 }
 
 export function smartParseBudget(
@@ -197,40 +625,334 @@ export function smartParseBudget(
   clientNameSuggestion?: string,
   _companyNameSuggestion?: string,
 ): ParsedBudget {
-  const text = (rawText || "").replace(/\s+/g, " ").trim();
+  const text = normalizeText(rawText);
+
   const document = extractDocument(text);
-  const phone = extractPhone(text, document);
-  const clientName = extractClient(text, clientNameSuggestion);
-  const serviceName = extractService(text);
   const total = extractTotal(text);
   const deadline = extractDeadline(text);
-  const notes = extractNotes(text);
-  const item: ParsedItem = {
-    id: `item-${Date.now()}-1`,
-    name: serviceName,
-    description: extractItemDescription(text),
-    quantity: 1,
-    unitPrice: total,
-    totalPrice: total,
-  };
+
+  const items = reconcileItems(
+    extractItems(text, total),
+    total,
+  );
+
+  const explicitFields = extractContextFields(text).filter(
+    (field, index, arr) =>
+      arr.findIndex(
+        (x) => x.key === field.key,
+      ) === index,
+  );
+
+  const serviceName =
+    items.length > 1
+      ? "Serviços e Produtos"
+      : items[0]?.name || "Serviço Prestado";
+
+  const subtotal =
+    items.length > 0
+      ? items.reduce(
+          (sum, item) =>
+            sum + item.totalPrice,
+          0,
+        )
+      : total;
 
   return {
-    title: serviceName === "Serviço Prestado" ? "Orçamento de Serviços" : `Orçamento de ${serviceName}`,
-    category: category || "Serviços",
+    title:
+      items.length > 1
+        ? "Orçamento de Serviços"
+        : `Orçamento de ${serviceName}`,
+
+    category:
+      category || "Serviços",
+
     client: {
-      name: clientName,
-      phone,
-      email: text.match(/\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b/)?.[0] ?? "",
+      name: extractClient(
+        text,
+        clientNameSuggestion,
+      ),
+      phone: extractPhone(
+        text,
+        document,
+      ),
+      email: extractEmail(text),
       document,
       address: extractAddress(text),
     },
-    categorySpecificFields: deadline ? [{ key: "deadline", label: "Prazo", value: deadline }] : [],
-    items: [item],
-    subtotal: total,
+
+    categorySpecificFields:
+      explicitFields,
+
+    items:
+      items.length > 0
+        ? items
+        : [
+            {
+              id: `item-${Date.now()}-1`,
+              name: serviceName,
+              description: "",
+              quantity: 1,
+              unitPrice: total,
+              totalPrice: total,
+            },
+          ],
+
+    subtotal,
+
     discount: 0,
+
+    total:
+      total || subtotal,
+
+    paymentTerms:
+      extractPayment(text),
+
+    validityDays:
+      extractValidityDays(text),
+
+    notes:
+      extractNotes(text),
+  };
+}
+
+export function reconcileBudgetWithSource(
+  rawText: string,
+  budget: ParsedBudget,
+  category?: string,
+  clientNameSuggestion?: string,
+  companyNameSuggestion?: string,
+): ParsedBudget {
+  const explicit = smartParseBudget(
+    rawText,
+    category,
+    clientNameSuggestion,
+    companyNameSuggestion,
+  );
+
+  const hasText = (
+    value: unknown,
+  ): value is string =>
+    typeof value === "string" &&
+    value.trim().length > 0;
+
+  // Only count an item as "real" if it has a name AND an actual price —
+  // a named-but-zero-priced item (common regex artifact) must never win
+  // over a priced item from the other source.
+  const sourceItems =
+    explicit.items.filter(
+      (item) =>
+        item.name !==
+          "Serviço Prestado" &&
+        item.totalPrice > 0,
+    );
+
+  const geminiItems =
+    Array.isArray(
+      budget.items,
+    )
+      ? budget.items.filter(
+          (item) =>
+            item.name &&
+            item.totalPrice > 0,
+        )
+      : [];
+
+  const sourceSum =
+    sourceItems.reduce(
+      (sum, item) =>
+        sum + item.totalPrice,
+      0,
+    );
+
+  const geminiSum =
+    geminiItems.reduce(
+      (sum, item) =>
+        sum + item.totalPrice,
+      0,
+    );
+
+  // Prefer whichever priced item set exists — Gemini first, since it
+  // reads free-form speech far better than the regex engine. The
+  // explicit.total match is only used to pick between the two sets when
+  // BOTH have priced items and they disagree with each other.
+  const finalItems =
+    geminiItems.length > 0 &&
+    sourceItems.length > 0 &&
+    explicit.total > 0 &&
+    Math.abs(sourceSum - explicit.total) < 0.01 &&
+    Math.abs(geminiSum - explicit.total) >= 0.01
+      ? sourceItems
+      : geminiItems.length > 0
+        ? geminiItems
+        : sourceItems.length > 0
+          ? sourceItems
+          : Array.isArray(budget.items) && budget.items.length > 0
+            ? budget.items
+            : explicit.items;
+
+  // Merge Gemini's fields with the regex engine's, deduped by the
+  // LABEL text (normalized), not the internal "key". Gemini invents its
+  // own key per field (e.g. "veiculo", "car_model") while the regex
+  // engine always uses fixed keys ("vehicle", "plate", "problem") — so
+  // two fields that are clearly the same thing to a human ("Veículo")
+  // could carry different keys and slip past a key-only dedupe. The
+  // label is what's actually shown on the document, so that's what must
+  // never repeat.
+  const normalizeLabel = (label: string): string =>
+    label
+      .trim()
+      .toLocaleLowerCase("pt-BR")
+      .replace(/[:\s]+$/, "");
+
+  const dynamicFieldsByLabel = new Map<
+    string,
+    CategorySpecificField
+  >();
+
+  for (const field of Array.isArray(
+    budget.categorySpecificFields,
+  )
+    ? budget.categorySpecificFields
+    : []) {
+    if (field?.label && field?.value) {
+      dynamicFieldsByLabel.set(
+        normalizeLabel(field.label),
+        field,
+      );
+    }
+  }
+
+  for (const field of explicit.categorySpecificFields) {
+    if (
+      field?.label &&
+      field?.value &&
+      !dynamicFieldsByLabel.has(
+        normalizeLabel(field.label),
+      )
+    ) {
+      dynamicFieldsByLabel.set(
+        normalizeLabel(field.label),
+        field,
+      );
+    }
+  }
+
+  const dynamicFields = Array.from(
+    dynamicFieldsByLabel.values(),
+  );
+
+  const finalItemsSum =
+    finalItems.reduce(
+      (sum, item) =>
+        sum + item.totalPrice,
+      0,
+    );
+
+  const subtotal =
+    finalItemsSum > 0
+      ? finalItemsSum
+      : typeof budget.subtotal === "number" &&
+          budget.subtotal > 0
+        ? budget.subtotal
+        : explicit.total || 0;
+
+  const discount =
+    typeof budget.discount === "number" &&
+    budget.discount > 0
+      ? budget.discount
+      : 0;
+
+  const total = Math.max(subtotal - discount, 0);
+
+  return {
+    ...budget,
+
+    title:
+      budget.title &&
+      budget.title !==
+        "Orçamento de Serviços"
+        ? budget.title
+        : explicit.title,
+
+    category:
+      budget.category ||
+      category ||
+      explicit.category,
+
+    // IMPORTANT: prefer what Gemini extracted for client data — it reads
+    // natural, unlabeled speech far better than the regex engine. The
+    // regex result ("explicit") is only used per-field when Gemini left
+    // that specific field empty, never as a blanket override.
+    client: {
+      name:
+        hasText(budget.client?.name)
+          ? budget.client.name
+          : explicit.client.name ||
+            clientNameSuggestion ||
+            "",
+
+      phone:
+        hasText(budget.client?.phone)
+          ? budget.client.phone
+          : explicit.client.phone ||
+            "",
+
+      email:
+        hasText(budget.client?.email)
+          ? budget.client.email
+          : explicit.client.email ||
+            "",
+
+      document:
+        hasText(budget.client?.document)
+          ? budget.client.document
+          : explicit.client.document ||
+            "",
+
+      address:
+        hasText(budget.client?.address)
+          ? budget.client.address
+          : explicit.client.address ||
+            "",
+    },
+
+    categorySpecificFields:
+      dynamicFields,
+
+    items:
+      finalItems,
+
+    subtotal,
+
+    discount,
+
     total,
-    paymentTerms: extractPayment(text),
-    validityDays: null,
-    notes,
+
+    paymentTerms:
+      hasText(
+        budget.paymentTerms,
+      )
+        ? budget.paymentTerms
+        : hasText(
+              explicit.paymentTerms,
+            )
+          ? explicit.paymentTerms
+          : "",
+
+    validityDays:
+      budget.validityDays !== null &&
+      budget.validityDays !== undefined
+        ? budget.validityDays
+        : explicit.validityDays ??
+          null,
+
+    notes:
+      hasText(budget.notes)
+        ? budget.notes
+        : hasText(
+              explicit.notes,
+            )
+          ? explicit.notes
+          : "",
   };
 }

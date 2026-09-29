@@ -18,7 +18,7 @@ import { toast } from "sonner";
 import { Loader2, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { currency } from "@/lib/format";
-import { DEFAULT_DURATION_MIN, durationLabel } from "@/lib/duration";
+import { durationLabel, displayDurationLabel, isFlexibleService } from "@/lib/duration";
 import type { Tables } from "@/integrations/supabase/types";
 import { useT } from "@/lib/i18n";
 
@@ -33,8 +33,8 @@ const colors = ["#22C55E", "#2563EB", "#38BDF8", "#F59E0B", "#EF4444", "#A855F7"
 const schema = z.object({
   name: z.string().min(2, "Obrigatório").max(120),
   price: z.coerce.number().min(0),
-  // Duração é opcional: vazio = 30 min (padrão).
-  duration_min: z.union([z.literal(""), z.coerce.number().int().min(5).max(600)]),
+  // Duração é 100% opcional: vazio ou 0 = sem duração fixa / vários dias / por projeto.
+  duration_min: z.union([z.literal(""), z.coerce.number().int().min(0).max(10080)]).optional(),
   color: z.string(),
   description: z.string().max(500).optional().or(z.literal("")),
   active: z.boolean(),
@@ -108,8 +108,12 @@ function ServicesPage() {
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <h3 className="truncate text-lg font-bold">{s.name}</h3>
-                {durationLabel(s.duration_min) && (
-                  <p className="mt-0.5 text-xs text-muted-foreground">{durationLabel(s.duration_min)}</p>
+                {displayDurationLabel(s.duration_min, s.name) ? (
+                  <p className="mt-0.5 text-xs text-muted-foreground">{displayDurationLabel(s.duration_min, s.name)}</p>
+                ) : (
+                  <Badge variant="outline" className="mt-1 border-dashed text-[11px] text-muted-foreground">
+                    {t("Sem tempo fixo / Por projeto")}
+                  </Badge>
                 )}
               </div>
               {!s.active && <Badge variant="outline" className="shrink-0 border-slate-500/40 text-slate-300">{t("Inativo")}</Badge>}
@@ -156,7 +160,11 @@ function ServiceDialog({ open, onOpenChange, editing }: { open: boolean; onOpenC
     values: {
       name: editing?.name ?? "",
       price: Number(editing?.price ?? 0),
-      duration_min: editing?.duration_min ?? "",
+      duration_min: editing
+        ? isFlexibleService(editing.name, editing.duration_min)
+          ? ""
+          : (editing.duration_min && editing.duration_min > 0 ? editing.duration_min : "")
+        : "",
       color: editing?.color ?? colors[0],
       description: editing?.description ?? "",
       active: editing?.active ?? true,
@@ -167,7 +175,7 @@ function ServiceDialog({ open, onOpenChange, editing }: { open: boolean; onOpenC
     mutationFn: async (v: Form) => {
       const payload = {
         ...v,
-        duration_min: v.duration_min === "" ? DEFAULT_DURATION_MIN : Number(v.duration_min),
+        duration_min: v.duration_min === "" || v.duration_min == null ? 0 : Number(v.duration_min),
         description: v.description || null,
         user_id: userId,
       };
@@ -203,10 +211,13 @@ function ServiceDialog({ open, onOpenChange, editing }: { open: boolean; onOpenC
               <Input type="number" step="0.01" {...form.register("price")} />
             </div>
             <div>
-              <Label>{t("Duração (min) (opcional)")}</Label>
-              <Input type="number" inputMode="numeric" placeholder="30" {...form.register("duration_min")} />
+              <Label>{t("Duração em min (opcional)")}</Label>
+              <Input type="number" inputMode="numeric" placeholder="Ex: 45 (vazio = por projeto)" {...form.register("duration_min")} />
             </div>
           </div>
+          <p className="-mt-1 text-[11px] text-muted-foreground">
+            {t("Deixe a duração em branco para serviços que duram mais de um dia, consultorias, criação de sites, redes sociais ou sem horário fixo.")}
+          </p>
           <div>
             <Label>{t("Cor")}</Label>
             <Controller

@@ -15,16 +15,26 @@ import { z } from "zod";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { CalendarPlus, ChevronLeft, ChevronRight, Loader2, Phone, Search } from "lucide-react";
+import { CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, Loader2, Phone, Search, Pencil, Trash2, X } from "lucide-react";
 import { addDays, addMonths, addWeeks, endOfDay, endOfMonth, endOfWeek, format, isSameDay, isSameMonth, startOfDay, startOfMonth, startOfWeek } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { statusColor, statusLabel, fmtTime } from "@/lib/format";
+import { statusColor, statusLabel, fmtTime, fmtDate } from "@/lib/format";
 import type { Tables, Enums } from "@/integrations/supabase/types";
 import { Skeleton } from "@/components/ui/skeleton";
 import { openWhatsApp } from "@/lib/whatsapp";
 import { WhatsAppIcon } from "@/components/icons/WhatsAppIcon";
 import { useT } from "@/lib/i18n";
-import { durationLabel } from "@/lib/duration";
+import { durationLabel, displayDurationLabel, isFlexibleService } from "@/lib/duration";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export const Route = createFileRoute("/_authenticated/appointments")({
   component: AppointmentsPage,
@@ -181,12 +191,32 @@ function AgendaList({ items, onOpen }: { items: ApptRow[]; onOpen: (a: ApptRow) 
 
 function ApptCard({ appt, onOpen }: { appt: ApptRow; onOpen: () => void }) {
   const t = useT();
+  const qc = useQueryClient();
   const snap = appt as ApptRow & { client_name?: string | null; client_phone?: string | null };
   const clientName = appt.clients?.name ?? snap.client_name ?? t("Cliente");
   const zap = appt.clients?.whatsapp ?? appt.clients?.phone ?? snap.client_phone ?? null;
   const tel = appt.clients?.phone ?? appt.clients?.whatsapp ?? snap.client_phone ?? null;
   const canZap = Boolean(zap);
   const [zapOpen, setZapOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
+  const deleteAppt = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from("appointments").delete().eq("id", appt.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success(t("Agendamento excluído"));
+      qc.invalidateQueries({ queryKey: ["appointments"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-stats"] });
+      setDeleteOpen(false);
+    },
+    onError: (e: Error) => toast.error(t("Erro ao excluir"), { description: e.message }),
+  });
+
+  const isScheduleFlexible =
+    appt.notes?.includes("[Horário a combinar]") || appt.notes?.includes("[Data e horário a combinar]");
+
   return (
    <>
     <div
@@ -196,17 +226,28 @@ function ApptCard({ appt, onOpen }: { appt: ApptRow; onOpen: () => void }) {
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onOpen()}
       className="bl-glass grid w-full cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-2xl p-3 text-left transition hover:border-primary/50 sm:gap-4 sm:p-4"
     >
-      <div className="w-14 text-center sm:w-16">
-        <p className="text-base font-bold sm:text-lg">{fmtTime(appt.starts_at)}</p>
-        <p className="text-[10px] text-muted-foreground">{appt.services?.duration_min} min</p>
+      <div className="w-16 text-center sm:w-20">
+        {isScheduleFlexible ? (
+          <p className="text-xs font-semibold text-primary">{t("A combinar")}</p>
+        ) : (
+          <p className="text-base font-bold sm:text-lg">{fmtTime(appt.starts_at)}</p>
+        )}
+        {displayDurationLabel(appt.services?.duration_min, appt.services?.name) ? (
+          <p className="text-[10px] text-muted-foreground">{displayDurationLabel(appt.services?.duration_min, appt.services?.name)}</p>
+        ) : (
+          <p className="text-[10px] text-muted-foreground">{t("Sem tempo fixo")}</p>
+        )}
       </div>
       <div className="min-w-0 border-l-2 pl-3 sm:pl-4" style={{ borderColor: appt.services?.color ?? "var(--brand-green)" }}>
         <p className="truncate font-semibold">{clientName}</p>
         <p className="truncate text-xs text-muted-foreground sm:text-sm">{appt.services?.name}</p>
+        {appt.notes && (
+          <p className="truncate text-[11px] text-muted-foreground/80">{appt.notes}</p>
+        )}
         <Badge variant="outline" className={`${statusColor[appt.status]} mt-1 sm:hidden`}>{t(statusLabel[appt.status])}</Badge>
       </div>
-      <div className="flex shrink-0 items-center gap-1.5">
-        <Badge variant="outline" className={`${statusColor[appt.status]} hidden sm:inline-flex`}>{t(statusLabel[appt.status])}</Badge>
+      <div className="flex shrink-0 items-center gap-1">
+        <Badge variant="outline" className={`${statusColor[appt.status]} hidden sm:inline-flex text-[11px] py-0.5 px-2`}>{t(statusLabel[appt.status])}</Badge>
         <Button
           type="button"
           size="icon"
@@ -214,10 +255,10 @@ function ApptCard({ appt, onOpen }: { appt: ApptRow; onOpen: () => void }) {
           disabled={!tel}
           onClick={(e) => { e.stopPropagation(); if (tel) window.location.href = `tel:${tel.replace(/\D/g, "")}`; }}
           title={tel ? t("Ligar para o cliente") : t("Cliente sem telefone cadastrado")}
-          className="h-9 w-9 disabled:opacity-40"
+          className="h-8 w-8 rounded-lg disabled:opacity-40"
           aria-label={t("Ligar para o cliente")}
         >
-          <Phone className="h-4 w-4" />
+          <Phone className="h-3.5 w-3.5" />
         </Button>
         <Button
           type="button"
@@ -226,14 +267,60 @@ function ApptCard({ appt, onOpen }: { appt: ApptRow; onOpen: () => void }) {
           disabled={!canZap}
           onClick={(e) => { e.stopPropagation(); setZapOpen(true); }}
           title={canZap ? t("Enviar mensagem no WhatsApp") : t("Cliente sem número cadastrado")}
-          className="h-9 w-9 border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-500 dark:text-emerald-400 disabled:opacity-40"
+          className="h-8 w-8 rounded-lg border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-500 dark:text-emerald-400 disabled:opacity-40"
           aria-label={t("Enviar WhatsApp")}
         >
-          <WhatsAppIcon className="h-4 w-4" />
+          <WhatsAppIcon className="h-3.5 w-3.5" />
+        </Button>
+        {/* Ícone de lápis para editar */}
+        <Button
+          type="button"
+          size="icon"
+          variant="outline"
+          onClick={(e) => { e.stopPropagation(); onOpen(); }}
+          title={t("Editar agendamento")}
+          className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground"
+          aria-label={t("Editar agendamento")}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
+        {/* Ícone de lixeira para excluir */}
+        <Button
+          type="button"
+          size="icon"
+          variant="outline"
+          onClick={(e) => { e.stopPropagation(); setDeleteOpen(true); }}
+          title={t("Excluir agendamento")}
+          className="h-8 w-8 rounded-lg border-destructive/30 text-destructive hover:bg-destructive/10"
+          aria-label={t("Excluir agendamento")}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
         </Button>
       </div>
     </div>
     {canZap && <WhatsAppDialog open={zapOpen} onOpenChange={setZapOpen} appt={appt} number={zap!} />}
+
+    <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t("Excluir agendamento?")}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {t("Tem certeza que deseja excluir o agendamento de")} <strong>{clientName}</strong> ({appt.services?.name})? {t("Esta ação não poderá ser desfeita.")}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => deleteAppt.mutate()}
+            className="bg-destructive hover:bg-destructive/90"
+            disabled={deleteAppt.isPending}
+          >
+            {deleteAppt.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {t("Excluir")}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
    </>
   );
 }
@@ -254,7 +341,7 @@ function WhatsAppDialog({
     const d = new Date(appt.starts_at);
     const tpl =
       settings.data?.reminder_template?.trim() ||
-      "Olá, {nome}! 👋\nPassando para confirmar seu agendamento de {servico}.\nData: {data} — Horário: {hora}\nLocal: {empresa}\n\nQualquer coisa é só responder por aqui. ✨";
+      "Olá, {nome}!\nPassando para confirmar seu agendamento de {servico}.\nData: {data} — Horário: {hora}\nLocal: {empresa}\n\nQualquer coisa é só responder por aqui. ✨";
     return tpl
       .replaceAll("{nome}", appt.clients?.name ?? "")
       .replaceAll("{servico}", appt.services?.name ?? "")
@@ -359,8 +446,8 @@ function MonthGrid({ cursor, items, onPick, onOpen }: { cursor: Date; items: App
 const apptSchema = z.object({
   client_id: z.string().uuid("Selecione um cliente"),
   service_id: z.string().uuid("Selecione um serviço"),
-  date: z.string().min(1, "Obrigatório"),
-  time: z.string().min(1, "Obrigatório"),
+  date: z.string().optional().or(z.literal("")),
+  time: z.string().optional().or(z.literal("")),
   status: z.enum(["pending","scheduled","confirmed","in_progress","completed","cancelled","declined"]),
   notes: z.string().max(500).optional().or(z.literal("")),
 });
@@ -383,13 +470,16 @@ function ApptDialog({ open, onOpenChange, editing, initial }: { open: boolean; o
   });
 
   const startDate = editing ? new Date(editing.starts_at) : (initial ?? new Date());
+  const isNotesFlexibleDate = editing?.notes?.includes("[Data e horário a combinar]");
+  const isNotesFlexibleTime = editing?.notes?.includes("[Horário a combinar]") || isNotesFlexibleDate;
+
   const form = useForm<ApptForm>({
     resolver: zodResolver(apptSchema),
     values: {
       client_id: editing?.client_id ?? "",
       service_id: editing?.service_id ?? "",
-      date: format(startDate, "yyyy-MM-dd"),
-      time: format(startDate, "HH:mm"),
+      date: editing ? (isNotesFlexibleDate ? "" : format(startDate, "yyyy-MM-dd")) : (initial ? format(initial, "yyyy-MM-dd") : ""),
+      time: editing ? (isNotesFlexibleTime ? "" : format(startDate, "HH:mm")) : "",
       status: (editing?.status as Enums<"appointment_status">) ?? "scheduled",
       notes: editing?.notes ?? "",
     },
@@ -399,16 +489,53 @@ function ApptDialog({ open, onOpenChange, editing, initial }: { open: boolean; o
     mutationFn: async (v: ApptForm) => {
       const svc = services.data?.find((s) => s.id === v.service_id);
       if (!svc) throw new Error(t("Serviço não encontrado"));
-      const start = new Date(`${v.date}T${v.time}:00`);
-      const end = new Date(start.getTime() + svc.duration_min * 60000);
+
+      let startIso: string;
+      let scheduleTag = "";
+
+      if (v.date && v.time) {
+        const start = new Date(`${v.date}T${v.time}:00`);
+        if (Number.isNaN(start.getTime())) throw new Error(t("Data ou horário inválido"));
+        startIso = start.toISOString();
+      } else if (v.date && !v.time) {
+        const start = new Date(`${v.date}T12:00:00`);
+        startIso = start.toISOString();
+        scheduleTag = "[Horário a combinar]";
+      } else if (!v.date && v.time) {
+        const today = new Date();
+        const start = new Date(`${format(today, "yyyy-MM-dd")}T${v.time}:00`);
+        startIso = start.toISOString();
+        scheduleTag = `[Data a combinar - Horário: ${v.time}]`;
+      } else {
+        startIso = new Date().toISOString();
+        scheduleTag = "[Data e horário a combinar]";
+      }
+
+      const duration = (svc.duration_min && svc.duration_min > 0 && !isFlexibleService(svc.name, svc.duration_min))
+        ? svc.duration_min
+        : 0;
+
+      const startDateObj = new Date(startIso);
+      const endIso = duration > 0
+        ? new Date(startDateObj.getTime() + duration * 60000).toISOString()
+        : startDateObj.toISOString();
+
+      let userNotes = (v.notes || "")
+        .replace(/\[(Data e horário a combinar|Horário a combinar|Data a combinar[^\]]*)\]/g, "")
+        .trim();
+      if (userNotes.startsWith("· ")) userNotes = userNotes.slice(2).trim();
+      if (userNotes.endsWith(" ·")) userNotes = userNotes.slice(0, -2).trim();
+
+      const combinedNotes = [scheduleTag, userNotes].filter(Boolean).join(" · ") || null;
+
       const payload = {
         user_id: userId,
         client_id: v.client_id,
         service_id: v.service_id,
-        starts_at: start.toISOString(),
-        ends_at: end.toISOString(),
+        starts_at: startIso,
+        ends_at: endIso,
         status: v.status,
-        notes: v.notes || null,
+        notes: combinedNotes,
         price: svc.price,
       };
       if (editing) {
@@ -473,7 +600,7 @@ function ApptDialog({ open, onOpenChange, editing, initial }: { open: boolean; o
                   <SelectContent>
                     {services.data?.map((s) => (
                       <SelectItem key={s.id} value={s.id}>
-                        <span className="inline-block h-2 w-2 rounded-full" style={{ background: s.color ?? "var(--brand-green)" }} /> {s.name}{durationLabel(s.duration_min) ? ` · ${durationLabel(s.duration_min)}` : ""}
+                        <span className="inline-block h-2 w-2 rounded-full" style={{ background: s.color ?? "var(--brand-green)" }} /> {s.name}{displayDurationLabel(s.duration_min, s.name) ? ` · ${displayDurationLabel(s.duration_min, s.name)}` : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -482,9 +609,31 @@ function ApptDialog({ open, onOpenChange, editing, initial }: { open: boolean; o
               </div>
             )}
           />
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div><Label>{t("Data")}</Label><Input type="date" {...form.register("date")} /></div>
-            <div><Label>{t("Horário")}</Label><Input type="time" {...form.register("time")} /></div>
+          <div className="space-y-2 rounded-2xl border border-border/70 bg-muted/20 p-3 sm:p-3.5">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <CalendarDays className="h-3.5 w-3.5 text-primary" />
+                {t("Data e horário")}
+              </span>
+              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                {t("opcional")}
+              </span>
+            </div>
+
+            <div className="grid gap-2.5 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-medium text-muted-foreground">{t("Data")}</Label>
+                <Input type="date" {...form.register("date")} className="h-9 text-xs" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-medium text-muted-foreground">{t("Horário")}</Label>
+                <Input type="time" {...form.register("time")} className="h-9 text-xs" />
+              </div>
+            </div>
+
+            <p className="text-[11px] text-muted-foreground/80 leading-tight">
+              {t("Deixe data ou horário em branco para atendimentos sem horário fixo ou a combinar.")}
+            </p>
           </div>
           <Controller
             name="status"

@@ -13,9 +13,9 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { SiteFooter } from "@/components/common/SiteFooter";
 import { Logo, BrandMark } from "@/components/brand/Logo";
 import { toast } from "sonner";
-import { KeyRound, Loader2, Moon, ShieldCheck, Sun } from "lucide-react";
+import { KeyRound, Loader2, Moon, ShieldCheck, Sun, Eye, EyeOff } from "lucide-react";
 import { useTheme } from "@/components/theme-provider";
-import { RECOVERY_QUESTIONS } from "@/lib/recovery-questions";
+import { DEFAULT_RECOVERY_QUESTION } from "@/lib/recovery-questions";
 import { saveRecoveryKey, getRecoveryQuestion, resetWithRecovery } from "@/lib/recovery.functions";
 import { useI18n, useT } from "@/lib/i18n";
 import { friendlyError } from "@/lib/auth-errors";
@@ -44,7 +44,7 @@ const signupSchema = loginSchema.extend({
   user_type: z.enum(["client", "company"]),
   business_name: z.string().optional(),
   cnpj: z.string().optional(),
-  question: z.string().min(3, "Escolha uma pergunta"),
+  question: z.string(),
   answer: z.string().min(2, "Informe a resposta"),
 });
 
@@ -203,6 +203,7 @@ function Perk({ text }: { text: string }) {
 
 function LoginForm({ onDone, onForgot }: { onDone: () => void; onForgot: () => void }) {
   const { t, lang } = useI18n();
+  const [showPassword, setShowPassword] = useState(false);
   const form = useForm<z.infer<typeof loginSchema>>({
     resolver: zodResolver(loginSchema),
     defaultValues: { email: "", password: "" },
@@ -219,7 +220,24 @@ function LoginForm({ onDone, onForgot }: { onDone: () => void; onForgot: () => v
         <Input type="email" placeholder={t("voce@exemplo.com")} autoComplete="email" {...form.register("email")} />
       </Field>
       <Field label={t("Senha")} error={form.formState.errors.password?.message && t(form.formState.errors.password.message)}>
-        <Input type="password" placeholder="••••••••" autoComplete="current-password" {...form.register("password")} />
+        <div className="relative">
+          <Input
+            type={showPassword ? "text" : "password"}
+            placeholder="••••••••"
+            autoComplete="current-password"
+            className="pr-10"
+            {...form.register("password")}
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword(!showPassword)}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors"
+            title={showPassword ? t("Ocultar senha") : t("Mostrar senha")}
+            tabIndex={-1}
+          >
+            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
       </Field>
       <Button className="w-full" size="lg" disabled={form.formState.isSubmitting}>
         {form.formState.isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -240,6 +258,8 @@ function LoginForm({ onDone, onForgot }: { onDone: () => void; onForgot: () => v
 
 function SignupForm({ onDone }: { onDone: (type: "client" | "company") => void }) {
   const { t, lang } = useI18n();
+  const [showSignupPassword, setShowSignupPassword] = useState(false);
+
   const form = useForm<z.infer<typeof signupSchema>>({
     resolver: zodResolver(signupSchema),
     defaultValues: {
@@ -248,12 +268,11 @@ function SignupForm({ onDone }: { onDone: (type: "client" | "company") => void }
       password: "",
       user_type: "client",
       business_name: "",
-      question: RECOVERY_QUESTIONS[0],
+      question: DEFAULT_RECOVERY_QUESTION,
       answer: "",
     },
   });
   const userType = form.watch("user_type");
-  const question = form.watch("question");
 
   const submit = form.handleSubmit(async (v) => {
     const { data, error } = await supabase.auth.signUp({
@@ -283,15 +302,20 @@ function SignupForm({ onDone }: { onDone: (type: "client" | "company") => void }
       toast.warning(t("Conta criada"), { description: t("Não conseguimos salvar a chave de recuperação agora. Configure em Ajustes.") });
     }
 
-    if (v.user_type === "company" && v.cnpj?.trim()) {
+        if (v.user_type === "company" && v.cnpj?.trim()) {
       try {
         const cleanCnpj = v.cnpj.trim();
-        localStorage.setItem("blcore_company_cnpj", cleanCnpj);
+        // CNPJ is persisted to Supabase only, scoped to this account's
+        // user_id. It used to also be cached in localStorage under a
+        // GLOBAL, unscoped key shared by every account on the same
+        // device/browser — meaning whichever business signed up last on
+        // a shared computer would leak its CNPJ into every other
+        // account's quotes. Never write that global key again.
         const userRes = await supabase.auth.getUser();
         const uid = userRes.data.user?.id || data.user?.id;
         if (uid) {
-          localStorage.setItem(`blcore_cnpj_${uid}`, cleanCnpj);
           await supabase.from("company_settings").upsert({
+
             user_id: uid,
             company_name: v.business_name || v.full_name,
             whatsapp_config: { cnpj: cleanCnpj },
@@ -348,29 +372,48 @@ function SignupForm({ onDone }: { onDone: (type: "client" | "company") => void }
         <Input type="email" placeholder={t("voce@exemplo.com")} autoComplete="email" {...form.register("email")} />
       </Field>
       <Field label={t("Senha")} error={form.formState.errors.password?.message && t(form.formState.errors.password.message)}>
-        <Input type="password" placeholder={t("Mínimo 6 caracteres")} autoComplete="new-password" {...form.register("password")} />
+        <div className="relative">
+          <Input
+            type={showSignupPassword ? "text" : "password"}
+            placeholder={t("Mínimo 6 caracteres")}
+            autoComplete="new-password"
+            className="pr-10"
+            {...form.register("password")}
+          />
+          <button
+            type="button"
+            onClick={() => setShowSignupPassword(!showSignupPassword)}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors"
+            title={showSignupPassword ? t("Ocultar senha") : t("Mostrar senha")}
+            tabIndex={-1}
+          >
+            {showSignupPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
       </Field>
 
-      <div className="rounded-2xl border border-border bg-muted/30 p-3">
-        <p className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          <KeyRound className="h-3.5 w-3.5 text-primary" />
-          {t("Chave de recuperação")}
-        </p>
-        <div className="space-y-3">
-          <Select value={question} onValueChange={(v) => form.setValue("question", v)}>
-            <SelectTrigger><SelectValue placeholder={t("Escolha a pergunta")} /></SelectTrigger>
-            <SelectContent>
-              {RECOVERY_QUESTIONS.map((q) => <SelectItem key={q} value={q}>{t(q)}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Input placeholder={t("Sua resposta")} {...form.register("answer")} />
-          {form.formState.errors.answer && (
-            <p className="text-xs text-destructive">{t(form.formState.errors.answer.message ?? "")}</p>
-          )}
-          <p className="text-[11px] text-muted-foreground">
-            {t("Usada para recuperar o acesso caso esqueça a senha.")}
-          </p>
+      <div className="rounded-2xl border border-border bg-muted/30 p-3.5 space-y-2.5">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <KeyRound className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              {t("Pergunta de segurança")}
+            </p>
+            <p className="text-xs font-semibold text-foreground">
+              {t("Qual o apelido do seu avô?")}
+            </p>
+          </div>
         </div>
+
+        <Field label={t("Resposta")} error={form.formState.errors.answer?.message && t(form.formState.errors.answer.message)}>
+          <Input placeholder={t("Sua resposta")} {...form.register("answer")} />
+        </Field>
+
+        <p className="text-[11px] text-muted-foreground">
+          {t("Usada para recuperar o acesso caso esqueça a senha.")}
+        </p>
       </div>
 
       <Button className="w-full" size="lg" disabled={form.formState.isSubmitting}>
@@ -387,13 +430,14 @@ function ForgotDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o:
   const [question, setQuestion] = useState<string | null>(null);
   const [answer, setAnswer] = useState("");
   const [password, setPassword] = useState("");
+  const [showForgotPw, setShowForgotPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { t, lang } = useI18n();
 
   useEffect(() => {
     if (!open) {
-      setStep(1); setQuestion(null); setAnswer(""); setPassword(""); setLoading(false);
+      setStep(1); setQuestion(null); setAnswer(""); setPassword(""); setShowForgotPw(false); setLoading(false);
     }
   }, [open]);
 
@@ -464,7 +508,24 @@ function ForgotDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o:
               <Input value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder={t("Resposta")} />
             </Field>
             <Field label={t("Nova senha")}>
-              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t("Mínimo 6 caracteres")} />
+              <div className="relative">
+                <Input
+                  type={showForgotPw ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={t("Mínimo 6 caracteres")}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowForgotPw(!showForgotPw)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors"
+                  title={showForgotPw ? t("Ocultar senha") : t("Mostrar senha")}
+                  tabIndex={-1}
+                >
+                  {showForgotPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
             </Field>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setStep(1)}>{t("Voltar")}</Button>

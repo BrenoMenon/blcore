@@ -39,6 +39,29 @@ function WhatsAppIcon({ className = "h-4 w-4" }: { className?: string }) {
   );
 }
 
+// Collects every readable CSS rule currently applied to the live page as
+// plain text. html2canvas renders from a cloned iframe that has to
+// re-download the site's <link rel="stylesheet"> on its own; when that
+// download hasn't finished (cold cache, iOS Safari), the export comes out
+// with NO Tailwind styles at all. Injecting the CSS text directly makes
+// the clone self-contained, so it never depends on that race.
+function collectDocumentCss(): string {
+  let css = "";
+  for (const sheet of Array.from(document.styleSheets)) {
+    try {
+      const rules = sheet.cssRules;
+      if (!rules) continue;
+      for (const rule of Array.from(rules)) {
+        css += rule.cssText + "\n";
+      }
+    } catch {
+      // Cross-origin stylesheet (e.g. Google Fonts): rules are not
+      // readable from JS. Safe to skip; the app's own CSS is same-origin.
+    }
+  }
+  return css;
+}
+
 export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPreviewProps) {
   const pdfRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -64,6 +87,22 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
     updateScale();
     window.addEventListener("resize", updateScale);
     return () => window.removeEventListener("resize", updateScale);
+  }, []);
+
+  // Warm up the Inter font weights this document uses the moment the
+  // preview mounts — well before the user has a chance to tap "Baixar
+  // PDF"/"Enviar no Zap". This is what actually prevents the first-click
+  // export from ever being captured with fallback font metrics; the
+  // document.fonts.ready wait inside generatePdf() is just a safety net
+  // for the (now rare) case someone taps immediately on a slow device.
+  useEffect(() => {
+    if (typeof document === "undefined" || !("fonts" in document)) return;
+    const weights = ["400 12px Inter", "500 12px Inter", "600 12px Inter", "700 20px Inter", "800 20px Inter"];
+    weights.forEach((font) => {
+      (document as any).fonts.load(font).catch(() => {
+        // ignore - the fonts.ready wait in generatePdf() still covers this
+      });
+    });
   }, []);
 
   // Format dates
@@ -152,6 +191,29 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
       throw new Error("Elemento do orçamento não encontrado.");
     }
 
+    // Wait for the web font (Inter) to finish loading and for the browser
+    // to finish laying out/painting the current quote's data before we
+    // snapshot it. Without this, the very first export right after a
+    // quote is created or opened can capture a half-rendered frame
+    // (fallback font metrics, stale layout) — which is exactly why it
+    // used to take a second click/tap to come out right.
+    if (typeof document !== "undefined" && "fonts" in document) {
+      try {
+        await (document as any).fonts.ready;
+      } catch {
+        // ignore - proceed anyway
+      }
+    }
+    await new Promise((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(resolve)),
+    );
+
+    // Small fixed safety margin on top of the frame waits above. Font
+    // swaps and final layout settling can land a few ms after the second
+    // animation frame fires on slower/older phones — this closes that
+    // last gap so the very first tap is reliably identical to the second.
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
     await prepareImagesForCanvas();
 
     const element = pdfRef.current;
@@ -183,6 +245,8 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
     try {
       await normalizeCloneImages(clone);
 
+      const appCss = collectDocumentCss();
+
       canvas = await html2canvas(clone, {
         scale: 2,
         useCORS: true,
@@ -196,7 +260,44 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
         windowWidth: 794,
         windowHeight: clone.scrollHeight,
         imageTimeout: 8000,
-        onclone: (clonedDoc) => {
+        onclone: async (clonedDoc) => {
+          // Put the app's full CSS directly into the cloned document so
+          // the export never depends on the iframe finishing its own
+          // stylesheet download (the cause of the intermittent
+          // "PDF without CSS" on the first tap).
+          if (appCss) {
+            const inlinedCss = clonedDoc.createElement("style");
+            inlinedCss.setAttribute("data-inlined-app-css", "true");
+            inlinedCss.textContent = appCss;
+            clonedDoc.head.insertBefore(inlinedCss, clonedDoc.head.firstChild);
+          }
+
+          // Tailwind v4 compiles its color palette (including the
+          // slate-* utilities used throughout this card) to oklch()/
+          // color-mix() values. html2canvas can't reliably rasterize
+          // those, so without this override every slate-colored
+          // background, border and divider silently disappears in the
+          // exported PDF/image, leaving only the plain inline-styled
+          // brand colors. This stylesheet forces safe, universally
+          // supported hex equivalents, scoped to the print clone only.
+          const colorFix = clonedDoc.createElement("style");
+          colorFix.textContent = `
+            #quote-pdf-render-clone .bg-slate-50 { background-color: #f8fafc !important; }
+            #quote-pdf-render-clone .bg-slate-50\\/50 { background-color: rgba(248,250,252,0.5) !important; }
+            #quote-pdf-render-clone .bg-slate-50\\/60 { background-color: rgba(248,250,252,0.6) !important; }
+            #quote-pdf-render-clone .bg-slate-50\\/70 { background-color: rgba(248,250,252,0.7) !important; }
+            #quote-pdf-render-clone .bg-white { background-color: #ffffff !important; }
+            #quote-pdf-render-clone .border-slate-200 { border-color: #e2e8f0 !important; }
+            #quote-pdf-render-clone .divide-slate-100 > :not([hidden]) ~ :not([hidden]) { border-color: #f1f5f9 !important; }
+            #quote-pdf-render-clone .text-slate-400 { color: #94a3b8 !important; }
+            #quote-pdf-render-clone .text-slate-500 { color: #64748b !important; }
+            #quote-pdf-render-clone .text-slate-600 { color: #475569 !important; }
+            #quote-pdf-render-clone .text-slate-700 { color: #334155 !important; }
+            #quote-pdf-render-clone .text-slate-800 { color: #1e293b !important; }
+            #quote-pdf-render-clone .text-slate-900 { color: #0f172a !important; }
+          `;
+          clonedDoc.head.appendChild(colorFix);
+
           const el = clonedDoc.getElementById("quote-pdf-render-clone");
           if (el) {
             el.style.transform = "none";
@@ -216,6 +317,19 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
           clonedDoc.documentElement.classList.remove("dark");
           clonedDoc.body.classList.remove("dark");
           clonedDoc.body.style.backgroundColor = "#ffffff";
+
+          // Do not let html2canvas take the picture until the styles are
+          // demonstrably applied. Without CSS the root has 0 padding; with
+          // it (p-10) it has 40px. Wait up to 3s for that to flip.
+          const cloneWin = clonedDoc.defaultView;
+          if (el && cloneWin) {
+            const deadline = Date.now() + 3000;
+            while (Date.now() < deadline) {
+              const padTop = parseFloat(cloneWin.getComputedStyle(el).paddingTop || "0");
+              if (padTop > 0) break;
+              await new Promise((resolve) => setTimeout(resolve, 50));
+            }
+          }
         },
       });
     } finally {
@@ -241,11 +355,25 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
     // Slice the tall canvas into A4 pages so nothing is cropped or blown up
     const pxPerMm = canvas.width / pageWidth;
     const pageHeightPx = Math.floor(pageHeight * pxPerMm);
-    const totalPages = Math.max(1, Math.ceil(canvas.height / pageHeightPx));
+
+    // The clone has a forced minHeight (1123px) plus rounding from the
+    // 2x render scale, which regularly leaves a sliver of a few px of
+    // blank space past the last real content — just enough to round up
+    // to an extra, essentially blank, page. Anything under 2% of a full
+    // page's height is treated as that rounding slack and dropped
+    // instead of becoming its own page.
+    const MIN_MEANINGFUL_SLICE_PX = pageHeightPx * 0.02;
+    const contentHeight =
+      canvas.height % pageHeightPx !== 0 &&
+      canvas.height % pageHeightPx < MIN_MEANINGFUL_SLICE_PX
+        ? canvas.height - (canvas.height % pageHeightPx)
+        : canvas.height;
+
+    const totalPages = Math.max(1, Math.ceil(contentHeight / pageHeightPx));
 
     for (let page = 0; page < totalPages; page++) {
       const sliceTop = page * pageHeightPx;
-      const sliceHeight = Math.min(pageHeightPx, canvas.height - sliceTop);
+      const sliceHeight = Math.min(pageHeightPx, contentHeight - sliceTop);
 
       const pageCanvas = document.createElement("canvas");
       pageCanvas.width = canvas.width;
@@ -419,8 +547,6 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
         quote.paymentTerms ? `💳 *Condições:* ${quote.paymentTerms}` : "",
         quote.validityDays ? `📅 *Validade:* Até ${validityDate}` : "",
         quote.notes ? `📝 *Observação:* ${quote.notes}` : "",
-        ``,
-        `_O arquivo PDF oficial foi baixado no seu aparelho e pode ser anexado aqui nesta conversa._`,
       ].filter(Boolean);
 
       const message = encodeURIComponent(lines.join("\n"));
@@ -645,11 +771,6 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
                     <p>
                       <span className="font-semibold text-slate-800">Emissão:</span> {emissionDate}
                     </p>
-                    {quote.validityDays ? (
-                      <p>
-                        <span className="font-semibold text-slate-800">Validade:</span> {validityDate}
-                      </p>
-                    ) : null}
                   </div>
                 </div>
               </div>
@@ -708,8 +829,8 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
                     </h3>
                     <div className="space-y-1.5 text-xs">
                       {quote.categorySpecificFields.map((field, idx) => (
-                        <div key={idx} className="flex justify-between items-center text-slate-700">
-                          <span className="font-semibold text-slate-900">{field.label}:</span>
+                        <div key={idx} className="flex justify-between items-start gap-2 text-slate-700">
+                          <span className="font-semibold text-slate-900 shrink-0">{field.label}:</span>
                           <span className="font-medium text-slate-800 text-right">{field.value || "—"}</span>
                         </div>
                       ))}
@@ -740,11 +861,13 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
                       >
                         <td className="py-3 px-3">
                           <p className="font-semibold text-slate-900">{item.name}</p>
-                          {item.description && (
-                            <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-                              {item.description}
-                            </p>
-                          )}
+                          {item.description &&
+                            item.description.trim().toLocaleLowerCase("pt-BR") !==
+                              item.name.trim().toLocaleLowerCase("pt-BR") && (
+                              <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                                {item.description}
+                              </p>
+                            )}
                         </td>
                         <td className="py-3 px-3 text-center font-medium text-slate-700">
                           {item.quantity}

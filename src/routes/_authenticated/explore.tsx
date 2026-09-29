@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Suspense, lazy, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { ClientOnly } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -15,13 +15,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PageHeader } from "@/components/common/PageHeader";
 import { initials, currency } from "@/lib/format";
 import { displayCategory, shortCategory, fullAddress, type CompanyPin } from "@/lib/marketplace";
-import { MapPin, Search, Loader2, CalendarPlus, Phone } from "lucide-react";
+import { MapPin, Search, Loader2, CalendarPlus, Phone, Sparkles, Clock, X } from "lucide-react";
 import { WhatsAppIcon } from "@/components/icons/WhatsAppIcon";
 import { openWhatsApp } from "@/lib/whatsapp";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { useT } from "@/lib/i18n";
-import { durationLabel } from "@/lib/duration";
+import { durationLabel, displayDurationLabel, isFlexibleService } from "@/lib/duration";
 
 const CompaniesMap = lazy(() => import("@/components/map/CompaniesMap"));
 
@@ -82,6 +82,17 @@ function ExplorePage() {
       }));
     },
   });
+
+  useEffect(() => {
+    const handleSelectCompany = (e: Event) => {
+      const customEvent = e as CustomEvent<string>;
+      const targetId = customEvent.detail;
+      const found = companies.data?.find((c) => c.id === targetId);
+      if (found) setSelected(found);
+    };
+    window.addEventListener("select-company", handleSelectCompany);
+    return () => window.removeEventListener("select-company", handleSelectCompany);
+  }, [companies.data]);
 
   const list = useMemo(() => {
     const term = norm(q);
@@ -210,8 +221,8 @@ function BookingSheet({ company, onOpenChange }: { company: CompanyPin | null; o
   const t = useT();
   const qc = useQueryClient();
   const [serviceId, setServiceId] = useState("");
-  const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
-  const [time, setTime] = useState("09:00");
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("");
   const [notes, setNotes] = useState("");
 
   const services = useQuery({
@@ -229,17 +240,42 @@ function BookingSheet({ company, onOpenChange }: { company: CompanyPin | null; o
     },
   });
 
+  const selectedSvc = services.data?.find((s) => s.id === serviceId);
+  const isFlexible = selectedSvc ? isFlexibleService(selectedSvc.name, selectedSvc.duration_min) : false;
+
   const request = useMutation({
     mutationFn: async () => {
       const svc = services.data?.find((s) => s.id === serviceId);
       if (!company || !svc) throw new Error(t("Selecione um serviço"));
-      const start = new Date(`${date}T${time}:00`);
-      if (Number.isNaN(start.getTime())) throw new Error(t("Informe data e horário válidos"));
+
+      let startIso: string;
+      let scheduleNote = "";
+
+      if (date && time) {
+        const start = new Date(`${date}T${time}:00`);
+        if (Number.isNaN(start.getTime())) throw new Error(t("Data ou horário inválido"));
+        startIso = start.toISOString();
+      } else if (date && !time) {
+        const start = new Date(`${date}T12:00:00`);
+        startIso = start.toISOString();
+        scheduleNote = "[Horário a combinar]";
+      } else if (!date && time) {
+        const today = new Date();
+        const start = new Date(`${format(today, "yyyy-MM-dd")}T${time}:00`);
+        startIso = start.toISOString();
+        scheduleNote = `[Data a combinar - Horário preferido: ${time}]`;
+      } else {
+        startIso = new Date().toISOString();
+        scheduleNote = "[Data e horário a combinar]";
+      }
+
+      const combinedNotes = [scheduleNote, notes.trim()].filter(Boolean).join(" · ") || null;
+
       const { error } = await db.rpc("request_appointment", {
         p_company_id: company.id,
         p_service_id: svc.id,
-        p_starts_at: start.toISOString(),
-        p_notes: notes || null,
+        p_starts_at: startIso,
+        p_notes: combinedNotes,
       });
       if (error) throw error;
     },
@@ -249,6 +285,8 @@ function BookingSheet({ company, onOpenChange }: { company: CompanyPin | null; o
       qc.invalidateQueries({ queryKey: ["notifications"] });
       setNotes("");
       setServiceId("");
+      setDate("");
+      setTime("");
       onOpenChange(false);
     },
     onError: (e: Error) => toast.error(t("Não foi possível solicitar"), { description: e.message }),
@@ -259,7 +297,15 @@ function BookingSheet({ company, onOpenChange }: { company: CompanyPin | null; o
   const phone = company?.phone ?? company?.whatsapp ?? null;
 
   return (
-    <Sheet open={!!company} onOpenChange={onOpenChange}>
+    <Sheet open={!!company} onOpenChange={(o) => {
+      if (!o) {
+        setDate("");
+        setTime("");
+        setServiceId("");
+        setNotes("");
+      }
+      onOpenChange(o);
+    }}>
       <SheetContent side="bottom" className="max-h-[92vh] overflow-y-auto rounded-t-3xl sm:max-w-lg sm:rounded-t-3xl">
         <SheetHeader className="text-left">
           <SheetTitle>{company?.name}</SheetTitle>
@@ -279,21 +325,22 @@ function BookingSheet({ company, onOpenChange }: { company: CompanyPin | null; o
           )}
 
           {(contact || phone) && (
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center justify-center gap-2">
               {contact && (
                 <Button
                   type="button"
+                  size="sm"
                   variant="outline"
-                  className="border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10 dark:text-emerald-400"
+                  className="h-8 px-3 text-xs border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10 dark:text-emerald-400"
                   onClick={() => openWhatsApp(contact, t("Olá! Vim pelo BL Core Gestão."))}
                 >
-                  <WhatsAppIcon className="mr-2 h-4 w-4" /> {t("WhatsApp")}
+                  <WhatsAppIcon className="mr-1.5 h-3.5 w-3.5" /> {t("WhatsApp")}
                 </Button>
               )}
               {phone && (
-                <Button type="button" variant="outline" asChild>
+                <Button type="button" size="sm" variant="outline" className="h-8 px-3 text-xs" asChild>
                   <a href={`tel:${phone.replace(/\D/g, "")}`}>
-                    <Phone className="mr-2 h-4 w-4" /> {t("Ligar")}
+                    <Phone className="mr-1.5 h-3.5 w-3.5" /> {t("Ligar")}
                   </a>
                 </Button>
               )}
@@ -307,7 +354,7 @@ function BookingSheet({ company, onOpenChange }: { company: CompanyPin | null; o
               <SelectContent>
                 {services.data?.map((s) => (
                   <SelectItem key={s.id} value={s.id}>
-                    {s.name} · {currency(Number(s.price))}{durationLabel(s.duration_min) ? ` · ${durationLabel(s.duration_min)}` : ""}
+                    {s.name} · {currency(Number(s.price))}{displayDurationLabel(s.duration_min, s.name) ? ` · ${displayDurationLabel(s.duration_min, s.name)}` : ""}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -317,31 +364,89 @@ function BookingSheet({ company, onOpenChange }: { company: CompanyPin | null; o
             )}
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label>{t("Data")}</Label>
-              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          {selectedSvc && (
+            <div className="space-y-1">
+              {isFlexible ? (
+                <div className="flex items-start gap-2 rounded-xl border border-primary/20 bg-primary/5 p-2.5 text-xs text-primary">
+                  <Sparkles className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{t("Este serviço não possui duração fixa (projeto/sob demanda). Você pode deixar data e horário em branco caso deseje combinar com a empresa.")}</span>
+                </div>
+              ) : displayDurationLabel(selectedSvc.duration_min, selectedSvc.name) ? (
+                <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5 text-primary" />
+                  <span>{t("Duração estimada:")} <strong>{displayDurationLabel(selectedSvc.duration_min, selectedSvc.name)}</strong></span>
+                </p>
+              ) : null}
             </div>
-            <div className="space-y-1.5">
-              <Label>{t("Horário")}</Label>
-              <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+          )}
+
+          <div className="space-y-2 rounded-2xl border border-border/70 bg-muted/20 p-3 sm:p-3.5">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <Clock className="h-3.5 w-3.5 text-primary" />
+                {t("Data e horário")}
+              </span>
+              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                {t("opcional")}
+              </span>
             </div>
+
+            <div className="grid gap-2.5 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-medium text-muted-foreground">{t("Data")}</Label>
+                <div className="relative">
+                  <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-9 text-xs" />
+                  {date && (
+                    <button
+                      type="button"
+                      onClick={() => setDate("")}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground"
+                      title={t("Limpar data")}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-medium text-muted-foreground">{t("Horário")}</Label>
+                <div className="relative">
+                  <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="h-9 text-xs" />
+                  {time && (
+                    <button
+                      type="button"
+                      onClick={() => setTime("")}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground"
+                      title={t("Limpar horário")}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-muted-foreground/80 leading-tight">
+              {t("Se preferir combinar o dia ou horário depois com a empresa, basta deixar em branco.")}
+            </p>
           </div>
 
           <div className="space-y-1.5">
             <Label>{t("Observações")}</Label>
-            <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t("Opcional")} />
+            <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t("Ex: Quero um orçamento para meu novo site...")} />
           </div>
 
-          <Button
-            className="w-full"
-            size="lg"
-            disabled={!serviceId || request.isPending}
-            onClick={() => request.mutate()}
-          >
-            {request.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CalendarPlus className="mr-2 h-4 w-4" />}
-            {t("Solicitar agendamento")}
-          </Button>
+          <div className="flex justify-center pt-2">
+            <Button
+              className="w-full max-w-sm h-10 text-sm font-semibold shadow-xs"
+              size="default"
+              disabled={!serviceId || request.isPending}
+              onClick={() => request.mutate()}
+            >
+              {request.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CalendarPlus className="mr-2 h-4 w-4" />}
+              {t("Solicitar agendamento")}
+            </Button>
+          </div>
         </div>
       </SheetContent>
     </Sheet>
