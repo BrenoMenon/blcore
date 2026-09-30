@@ -61,7 +61,7 @@ function SettingsPage() {
     if (data) {
       form.reset({
         company_name: data.company_name ?? "",
-        cnpj: savedCnpj,
+        cnpj: formatCNPJ(savedCnpj),
         whatsapp: data.whatsapp ? formatPhoneBR(data.whatsapp) : "",
         phone: data.phone ? formatPhoneBR(data.phone) : "",
         address: data.address ?? "",

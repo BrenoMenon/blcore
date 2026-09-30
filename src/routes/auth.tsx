@@ -20,6 +20,7 @@ import { RecoveryQuestionPicker } from "@/components/common/RecoveryQuestionPick
 import { saveRecoveryKey, getRecoveryQuestion, resetWithRecovery } from "@/lib/recovery.functions";
 import { useI18n, useT } from "@/lib/i18n";
 import { friendlyError } from "@/lib/auth-errors";
+import { formatCNPJ } from "@/lib/cnpj";
 
 const searchSchema = z.object({
   mode: z.enum(["login", "signup"]).optional(),
@@ -365,7 +366,15 @@ function SignupForm({ onDone }: { onDone: (type: "client" | "company") => void }
             <Input placeholder="Ex: BL Core Barbearia" {...form.register("business_name")} />
           </Field>
           <Field label={t("CNPJ (opcional)")}>
-            <Input placeholder="00.000.000/0000-00" {...form.register("cnpj")} />
+            <Input
+              inputMode="numeric"
+              placeholder="00.000.000/0000-00"
+              maxLength={18}
+              value={form.watch("cnpj") ?? ""}
+              onChange={(e) =>
+                form.setValue("cnpj", formatCNPJ(e.target.value), { shouldDirty: true })
+              }
+            />
           </Field>
         </>
       )}

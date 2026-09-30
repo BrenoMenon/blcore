@@ -12,6 +12,7 @@ import { QuoteReviewSection } from "@/components/quotes/QuoteReviewSection";
 import { QuotePdfPreview } from "@/components/quotes/QuotePdfPreview";
 import { QuoteData, CompanyBranding } from "@/types/quotes";
 import { extractPaletteFromImage } from "@/lib/colorExtractor";
+import { formatCNPJ } from "@/lib/cnpj";
 import {
   FileText,
   Sparkles,
@@ -103,11 +104,12 @@ function QuotesPage() {
         // from localStorage. A shared, unscoped localStorage key used to
         // leak one account's CNPJ into every other account's quotes on
         // the same device.
-        const cnpj =
+        const cnpj = formatCNPJ(
           (settings?.whatsapp_config as any)?.cnpj ||
-          (settings as any)?.cnpj ||
-          (profile as any)?.cnpj ||
-          "";
+            (settings as any)?.cnpj ||
+            (profile as any)?.cnpj ||
+            "",
+        );
 
 
         const companyName =
