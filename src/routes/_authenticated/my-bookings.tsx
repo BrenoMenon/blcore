@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/common/PageHeader";
-import { fmtDateTime, currency, statusColor, statusLabel } from "@/lib/format";
+import { fmtDateTime, fmtDate, currency, statusColor, statusLabel } from "@/lib/format";
 import { toast } from "sonner";
 import { CalendarX2, Phone } from "lucide-react";
 import { openWhatsApp } from "@/lib/whatsapp";
@@ -120,8 +120,19 @@ function MyBookingsPage() {
               <div className="min-w-0">
                 <p className="truncate font-semibold">{b.company}</p>
                 <p className="truncate text-sm text-muted-foreground">
-                  {b.services?.name ?? t("Serviço")} · {fmtDateTime(b.starts_at)}
+                  {b.services?.name ?? t("Serviço")} · {
+                    b.notes?.includes("[Data e horário a combinar]")
+                      ? t("Data e horário a combinar")
+                      : b.notes?.includes("[Horário a combinar]")
+                      ? `${fmtDate(b.starts_at)} · ${t("Horário a combinar")}`
+                      : b.notes?.includes("[Data a combinar")
+                      ? t("Data a combinar")
+                      : fmtDateTime(b.starts_at)
+                  }
                 </p>
+                {b.notes && (
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground/80">{b.notes}</p>
+                )}
                 {b.price != null && <p className="text-xs text-muted-foreground">{currency(Number(b.price))}</p>}
                 {b.decline_reason && (
                   <p className="mt-1 text-xs text-destructive">{t("Motivo")}: {b.decline_reason}</p>

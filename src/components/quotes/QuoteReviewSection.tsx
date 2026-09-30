@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { QuoteData, QuoteItem, CategoryField } from "@/types/quotes";
 import { extractPaletteFromImage } from "@/lib/colorExtractor";
+import { formatCNPJ } from "@/lib/cnpj";
 import {
   Palette,
   Upload,
@@ -376,11 +377,12 @@ export function QuoteReviewSection({
                   <div>
                     <Label className="text-xs">CNPJ da Empresa</Label>
                     <Input
-                      value={quote.branding.cnpj || ""}
+                      value={formatCNPJ(quote.branding.cnpj || "")}
+                      inputMode="numeric"
                       onChange={(e) =>
                         onChange({
                           ...quote,
-                          branding: { ...quote.branding, cnpj: e.target.value },
+                          branding: { ...quote.branding, cnpj: formatCNPJ(e.target.value) },
                         })
                       }
                       placeholder="Ex: 00.000.000/0001-00"

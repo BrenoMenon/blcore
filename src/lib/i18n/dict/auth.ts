@@ -71,6 +71,11 @@ export const en: Record<string, string> = {
   "Cidade onde você nasceu": "City where you were born",
   "Seu prato favorito": "Your favorite dish",
   "Nome do seu melhor amigo de infância": "Your childhood best friend's name",
+  "Qual o apelido do seu avô?": "What was your grandfather's nickname?",
+  "Escrever minha própria pergunta": "Write my own question",
+  "Digite sua pergunta": "Type your question",
+  "Informe a pergunta": "Enter the question",
+  "Pergunta muito longa": "Question is too long",
 };
 
 export const es: Record<string, string> = {
@@ -145,4 +150,9 @@ export const es: Record<string, string> = {
   "Cidade onde você nasceu": "Ciudad donde naciste",
   "Seu prato favorito": "Tu plato favorito",
   "Nome do seu melhor amigo de infância": "Nombre de tu mejor amigo de la infancia",
+  "Qual o apelido do seu avô?": "¿Cuál era el apodo de tu abuelo?",
+  "Escrever minha própria pergunta": "Escribir mi propia pregunta",
+  "Digite sua pergunta": "Escribe tu pregunta",
+  "Informe a pergunta": "Indica la pregunta",
+  "Pergunta muito longa": "La pregunta es demasiado larga",
 };

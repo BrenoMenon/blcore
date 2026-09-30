@@ -21,6 +21,7 @@ import {
   PlusCircle,
   Eye,
   Trash2,
+  Pencil,
   Calendar,
   DollarSign,
   User,
@@ -33,22 +34,30 @@ export const Route = createFileRoute("/_authenticated/quotes")({
   component: QuotesPage,
 });
 
-const HISTORY_STORAGE_KEY = "blcore_quotes_history";
+// IMPORTANT: the history key must be scoped per logged-in user. A bare
+// "blcore_quotes_history" key is shared by EVERY account that ever opens
+// this app in the same browser — that leaked one company's saved quotes
+// (client names, prices, budgets) into every other account on the same
+// device. Each user's history now lives under its own key, and a legacy
+// unscoped blob (from before this fix) is never read again.
+function historyStorageKey(userId: string): string {
+  return `blcore_quotes_history_${userId}`;
+}
 
-function getStoredHistory(): QuoteData[] {
-  if (typeof window === "undefined") return [];
+function getStoredHistory(userId: string): QuoteData[] {
+  if (typeof window === "undefined" || !userId) return [];
   try {
-    const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
+    const raw = localStorage.getItem(historyStorageKey(userId));
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
   }
 }
 
-function saveHistoryToStorage(history: QuoteData[]) {
-  if (typeof window === "undefined") return;
+function saveHistoryToStorage(userId: string, history: QuoteData[]) {
+  if (typeof window === "undefined" || !userId) return;
   try {
-    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
+    localStorage.setItem(historyStorageKey(userId), JSON.stringify(history));
   } catch {
     // ignore
   }
@@ -65,10 +74,11 @@ function QuotesPage() {
   const [currentQuote, setCurrentQuote] = useState<QuoteData | null>(null);
   const [history, setHistory] = useState<QuoteData[]>([]);
 
-  // Load history on mount
+  // Load history whenever the logged-in user changes (covers switching
+  // accounts without a full page reload too, not just initial mount).
   useEffect(() => {
-    setHistory(getStoredHistory());
-  }, []);
+    setHistory(getStoredHistory(userId));
+  }, [userId]);
 
   // Fetch company profile & settings from Supabase
   const { data: companyData, isLoading: loadingCompany } = useQuery({
@@ -89,13 +99,16 @@ function QuotesPage() {
             .maybeSingle(),
         ]);
 
+                // CNPJ comes from Supabase only, scoped to this user_id — never
+        // from localStorage. A shared, unscoped localStorage key used to
+        // leak one account's CNPJ into every other account's quotes on
+        // the same device.
         const cnpj =
           (settings?.whatsapp_config as any)?.cnpj ||
           (settings as any)?.cnpj ||
           (profile as any)?.cnpj ||
-          localStorage.getItem(`blcore_cnpj_${userId}`) ||
-          localStorage.getItem("blcore_company_cnpj") ||
           "";
+
 
         const companyName =
           settings?.company_name || profile?.business_name || "BL Core Gestão";
@@ -118,12 +131,10 @@ function QuotesPage() {
           email: userEmailAuth,
         };
       } catch (err) {
-        console.error("Error loading company info for quotes:", err);
-        const fallbackCnpj =
-          localStorage.getItem(`blcore_cnpj_${userId}`) ||
-          localStorage.getItem("blcore_company_cnpj") ||
-          "";
+                console.error("Error loading company info for quotes:", err);
+        const fallbackCnpj = "";
         return {
+
           companyName: "BL Core Gestão",
           category: "Social Media",
           cnpj: fallbackCnpj,
@@ -140,15 +151,15 @@ function QuotesPage() {
   });
 
   // Base branding state - defaults category to Social Media
+    // Base branding state - defaults category to Social Media. CNPJ starts
+  // empty and is filled in from Supabase once companyData loads below —
+  // never from localStorage (see the leak note further down).
   const [branding, setBranding] = useState<CompanyBranding>({
     companyName: "BL Core Gestão",
     category: "Social Media",
-    cnpj:
-      (typeof window !== "undefined" &&
-        (localStorage.getItem(`blcore_cnpj_${userId}`) ||
-          localStorage.getItem("blcore_company_cnpj"))) ||
-      "",
+    cnpj: "",
     email: userEmailAuth,
+
     logoUrl: "",
     phone: "",
     whatsapp: "",
@@ -191,14 +202,12 @@ function QuotesPage() {
 
   // When AI organizes the budget, move to review step
   function handleQuoteOrganized(quote: QuoteData) {
-    const activeCnpj =
+        const activeCnpj =
       quote.branding?.cnpj ||
       branding.cnpj ||
       companyData?.cnpj ||
-      (typeof window !== "undefined" &&
-        (localStorage.getItem(`blcore_cnpj_${userId}`) ||
-          localStorage.getItem("blcore_company_cnpj"))) ||
       "";
+
 
     const completeQuote: QuoteData = {
       ...quote,
@@ -223,7 +232,7 @@ function QuotesPage() {
       } else {
         updated = [savedQuote, ...prev];
       }
-      saveHistoryToStorage(updated);
+      saveHistoryToStorage(userId, updated);
       return updated;
     });
   }
@@ -231,7 +240,7 @@ function QuotesPage() {
   function handleDeleteFromHistory(id: string) {
     setHistory((prev) => {
       const updated = prev.filter((q) => q.id !== id);
-      saveHistoryToStorage(updated);
+      saveHistoryToStorage(userId, updated);
       return updated;
     });
     toast.success("Orçamento removido do histórico.");
@@ -242,6 +251,13 @@ function QuotesPage() {
     setCurrentStep("preview");
     setActiveTab("create");
     toast.info(`Orçamento de ${item.client.name || "cliente"} carregado.`);
+  }
+
+  function handleEditFromHistory(item: QuoteData) {
+    setCurrentQuote(item);
+    setCurrentStep("review");
+    setActiveTab("create");
+    toast.info(`Editando orçamento de ${item.client.name || "cliente"}.`);
   }
 
   function handleStartNewQuote() {
@@ -379,10 +395,7 @@ function QuotesPage() {
             </Card>
           ) : (
             <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <p className="text-xs text-muted-foreground">
-                  {history.length} {history.length === 1 ? "orçamento salvo" : "orçamentos salvos"} no dispositivo.
-                </p>
+              <div className="flex justify-end items-center">
                 <Button
                   size="sm"
                   onClick={() => {
@@ -397,7 +410,7 @@ function QuotesPage() {
 
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {history.map((item) => (
-                  <Card key={item.id} className="bl-glass border-border hover:border-primary/40 transition-all flex flex-col justify-between">
+                  <Card key={item.id} className="bl-glass border-border hover:border-primary/40 transition-all flex flex-col justify-between min-w-0 overflow-hidden">
                     <CardHeader className="pb-2">
                       <div className="flex items-start justify-between gap-2">
                         <div>
@@ -428,9 +441,9 @@ function QuotesPage() {
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-1 text-[11px] text-muted-foreground line-clamp-1">
-                        <span>{item.items.length} {item.items.length === 1 ? "item" : "itens"}:</span>
-                        <span className="truncate italic">
+                      <div className="flex items-center gap-1 text-[11px] text-muted-foreground min-w-0">
+                        <span className="shrink-0">{item.items.length} {item.items.length === 1 ? "item" : "itens"}:</span>
+                        <span className="truncate italic min-w-0">
                           {item.items.map((i) => i.name).join(", ")}
                         </span>
                       </div>
@@ -448,9 +461,21 @@ function QuotesPage() {
                         <Button
                           variant="ghost"
                           size="icon"
+                          onClick={() => handleEditFromHistory(item)}
+                          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                          title="Editar orçamento"
+                          aria-label="Editar orçamento"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           onClick={() => handleDeleteFromHistory(item.id)}
                           className="h-8 w-8 text-muted-foreground hover:text-destructive"
                           title="Excluir do histórico"
+                          aria-label="Excluir do histórico"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>

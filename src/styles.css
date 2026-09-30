@@ -162,6 +162,14 @@
   color: transparent;
 }
 
+/* Modo claro: título em verde sólido (mesma cor dos botões), sem gradiente */
+:root:not(.dark) .bl-gradient-text,
+.light .bl-gradient-text {
+  background: none;
+  color: var(--primary);
+  -webkit-text-fill-color: var(--primary);
+}
+
 /* ---------- Ajustes globais de responsividade e formulários ---------- */
 @layer base {
   html,
