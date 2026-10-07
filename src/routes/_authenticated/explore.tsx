@@ -11,11 +11,10 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/components/common/PageHeader";
 import { initials, currency } from "@/lib/format";
 import { displayCategory, shortCategory, fullAddress, type CompanyPin } from "@/lib/marketplace";
-import { MapPin, Search, Loader2, CalendarPlus, Phone, Sparkles, Clock, X } from "lucide-react";
+import { MapPin, Search, Loader2, CalendarPlus, Phone, Sparkles, Clock, X, Check, Briefcase, ChevronDown } from "lucide-react";
 import { WhatsAppIcon } from "@/components/icons/WhatsAppIcon";
 import { openWhatsApp } from "@/lib/whatsapp";
 import { toast } from "sonner";
@@ -168,7 +167,7 @@ function ExplorePage() {
               <Card className={`bl-glass transition hover:border-primary/60 ${selected?.id === c.id ? "border-primary" : ""}`}>
                 <CardContent className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 p-4">
                   <Avatar className="h-11 w-11 shrink-0">
-                    <AvatarImage src={c.avatar_url ?? undefined} />
+                    <AvatarImage src={c.avatar_url ?? undefined} loading="lazy" decoding="async" />
                     <AvatarFallback className="bg-primary/20 text-xs font-bold text-primary">
                       {initials(c.name)}
                     </AvatarFallback>
@@ -231,7 +230,7 @@ function BookingSheet({ company, onOpenChange }: { company: CompanyPin | null; o
     queryFn: async () => {
       const { data, error } = await supabase
         .from("services")
-        .select("id, name, price, duration_min")
+        .select("id, name, price, duration_min, description, color")
         .eq("user_id", company!.id)
         .eq("active", true)
         .order("name");
@@ -306,18 +305,26 @@ function BookingSheet({ company, onOpenChange }: { company: CompanyPin | null; o
       }
       onOpenChange(o);
     }}>
-      <SheetContent side="bottom" className="max-h-[92vh] overflow-y-auto rounded-t-3xl sm:max-w-lg sm:rounded-t-3xl">
+      <SheetContent side="bottom" className="mx-auto max-h-[92dvh] w-full overflow-y-auto overscroll-contain rounded-t-3xl px-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:max-w-xl sm:px-6">
         <SheetHeader className="text-left">
-          <SheetTitle>{company?.name}</SheetTitle>
-          <SheetDescription>
-            {displayCategory(company) ?? t("Solicite seu horário")}
-          </SheetDescription>
+          <div className="flex min-w-0 items-center gap-3">
+            <Avatar className="h-14 w-14 shrink-0 ring-2 ring-primary/30">
+              <AvatarImage src={company?.avatar_url ?? undefined} loading="lazy" />
+              <AvatarFallback className="bg-primary/20 font-bold text-primary">
+                {initials(company?.name ?? "")}
+              </AvatarFallback>
+            </Avatar>
+            <div className="min-w-0">
+              <SheetTitle className="truncate text-lg">{company?.name}</SheetTitle>
+              <SheetDescription className="line-clamp-2">
+                {displayCategory(company) ?? t("Solicite seu horário")}
+              </SheetDescription>
+            </div>
+          </div>
         </SheetHeader>
 
         <div className="mt-4 space-y-4 pb-2">
-          {company?.bio && (
-            <p className="text-left text-sm leading-relaxed text-muted-foreground">{company.bio.trim()}</p>
-          )}
+          {company?.bio && <AboutBlock bio={company.bio.trim()} />}
 
           {address && (
             <p className="flex items-start gap-2 rounded-xl border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
@@ -349,18 +356,65 @@ function BookingSheet({ company, onOpenChange }: { company: CompanyPin | null; o
             </div>
           )}
 
-          <div className="space-y-1.5">
-            <Label>{t("Serviço")}</Label>
-            <Select value={serviceId} onValueChange={setServiceId}>
-              <SelectTrigger><SelectValue placeholder={t("Escolha o serviço")} /></SelectTrigger>
-              <SelectContent>
-                {services.data?.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.name} · {currency(Number(s.price))}{displayDurationLabel(s.duration_min, s.name) ? ` · ${displayDurationLabel(s.duration_min, s.name)}` : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <Label className="flex items-center gap-1.5">
+                <Briefcase className="h-4 w-4 text-primary" /> {t("Serviços oferecidos")}
+              </Label>
+              {!!services.data?.length && (
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                  {services.data.length}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">{t("Toque em um serviço para ver detalhes e selecioná-lo.")}</p>
+            {services.isLoading && (
+              <div className="space-y-2">
+                {[0, 1, 2].map((i) => <div key={i} className="h-16 animate-pulse rounded-xl bg-muted" />)}
+              </div>
+            )}
+            <div className="grid gap-2" role="radiogroup" aria-label={t("Serviços oferecidos")}>
+              {services.data?.map((s) => {
+                const active = s.id === serviceId;
+                const dur = displayDurationLabel(s.duration_min, s.name);
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => setServiceId(active ? "" : s.id)}
+                    className={`w-full rounded-xl border p-3 text-left transition active:scale-[0.99] ${
+                      active ? "border-primary bg-primary/10 shadow-sm" : "border-border bg-card hover:border-primary/50"
+                    }`}
+                  >
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold leading-tight break-words">{s.name}</p>
+                        {s.description && (
+                          <p className={`mt-1 text-xs leading-relaxed text-muted-foreground whitespace-pre-line ${active ? "" : "line-clamp-2"}`}>
+                            {s.description}
+                          </p>
+                        )}
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                          {dur && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                              <Clock className="h-3 w-3" /> {dur}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 flex-col items-end gap-2">
+                        <span className="text-sm font-bold text-primary">{currency(Number(s.price))}</span>
+                        <span className={`grid h-5 w-5 place-items-center rounded-full border ${active ? "border-primary bg-primary text-primary-foreground" : "border-border"}`}>
+                          {active && <Check className="h-3 w-3" />}
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
             {services.data?.length === 0 && (
               <p className="text-xs text-muted-foreground">{t("Esta empresa ainda não publicou serviços.")}</p>
             )}
@@ -438,7 +492,7 @@ function BookingSheet({ company, onOpenChange }: { company: CompanyPin | null; o
             <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
 
-          <div className="flex justify-center pt-2">
+          <div className="sticky bottom-0 -mx-4 flex justify-center border-t border-border bg-background/95 px-4 pt-3 pb-1 backdrop-blur sm:-mx-6 sm:px-6">
             <Button
               className="w-full max-w-sm h-10 text-sm font-semibold shadow-xs"
               size="default"
@@ -446,11 +500,29 @@ function BookingSheet({ company, onOpenChange }: { company: CompanyPin | null; o
               onClick={() => request.mutate()}
             >
               {request.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CalendarPlus className="mr-2 h-4 w-4" />}
-              {t("Solicitar agendamento")}
+              {selectedSvc ? `${t("Solicitar")} · ${currency(Number(selectedSvc.price))}` : t("Selecione um serviço")}
             </Button>
           </div>
         </div>
       </SheetContent>
     </Sheet>
+  );
+}
+
+function AboutBlock({ bio }: { bio: string }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const long = bio.length > 220;
+  return (
+    <div className="rounded-xl border border-border bg-muted/30 p-3">
+      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-primary">{t("Sobre a empresa")}</p>
+      <p className={`whitespace-pre-line text-sm leading-relaxed text-muted-foreground ${open || !long ? "" : "line-clamp-4"}`}>{bio}</p>
+      {long && (
+        <button type="button" onClick={() => setOpen((o) => !o)} className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-primary">
+          {open ? t("Ver menos") : t("Ver mais")}
+          <ChevronDown className={`h-3 w-3 transition ${open ? "rotate-180" : ""}`} />
+        </button>
+      )}
+    </div>
   );
 }

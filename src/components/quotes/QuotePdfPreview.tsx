@@ -16,8 +16,7 @@ import {
   Minimize2,
 } from "lucide-react";
 import { toast } from "sonner";
-import jsPDF from "jspdf";
-import html2canvas from "html2canvas-pro";
+import type jsPDF from "jspdf";
 
 interface QuotePdfPreviewProps {
   quote: QuoteData;
@@ -187,6 +186,10 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
 
   // Core PDF generator returning jsPDF object
   async function generatePdf(): Promise<{ pdf: jsPDF; fileName: string }> {
+    const [{ default: JsPDF }, { default: html2canvas }] = await Promise.all([
+      import("jspdf"),
+      import("html2canvas-pro"),
+    ]);
     if (!pdfRef.current) {
       throw new Error("Elemento do orçamento não encontrado.");
     }
@@ -342,7 +345,7 @@ export function QuotePdfPreview({ quote, onEdit, onSaveToHistory }: QuotePdfPrev
       throw new Error("Não foi possível renderizar o orçamento.");
     }
 
-    const pdf = new jsPDF({
+    const pdf = new JsPDF({
       orientation: "portrait",
       unit: "mm",
       format: "a4",
